@@ -20,5 +20,10 @@ Read in order:
    scopes, bindings, and a symbol table are; `calc-lang`'s first binding construct
    (`Stmt::Let` inside `Expr::Block`) and the hand-written `resolve` pass that checks
    names against nested lexical scopes.
+5. [a4-mid-level-ir-and-lowering.md](a4-mid-level-ir-and-lowering.md) — what a
+   mid-level IR is and why compilers use one instead of generating code straight from
+   the AST; three-address code, structured control-flow nodes vs. jump-based basic
+   blocks, and how `calc-ir::ast_to_ir::lower` turns an `if`-expression's two branches
+   into one value ("phi via copies").
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

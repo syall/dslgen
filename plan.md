@@ -1,43 +1,41 @@
-# Session A3 — Bindings in the AST, scopes, symbol table, and role-annotation concepts (by hand)
+# Session A4 — Mid-level IR and the lowering pass
 
-Spec refs: spec.md §5 (result types, for the new AST node), §6.2, §6.3. Roadmap: roadmap.md "A3".
+Spec refs: spec.md §8.1. Roadmap: roadmap.md "A4".
 
 ## Plan
 
-1. Add `crates/calc-syntax/src/ast.rs`: `Stmt::Let { name, value }` (a declaration,
-   not an expression) and `Expr::Block { stmts: Vec<Stmt>, result: Box<Expr> }` (a
-   sequence of declarations sharing one scope, followed by a result expression) —
-   chosen over an ML-style `let ... in ...` expression because that design makes
-   "duplicate binding" structurally unreachable (every `let` would open its own
-   fresh single-name scope). See `DECISIONS.md`'s A3 entry.
-2. Update `calc.lalrpop`: add `Block`/`Stmt` grammar rules; change `if`/`else`'s
-   branches from bare `"{" <t:Expr> "}"` to `<t:Block>` (backward-compatible
-   superset — `if x { 1 } else { 2 }` still parses the same, with empty-`stmts`
-   `Block`s); add `Block` as a `Term` alternative so blocks can appear as any
-   expression.
-3. Update `lalrpop_frontend.rs`'s `role_model()`: add `"let"` to `keywords`, and
-   populate `scopes: vec!["Block"]` / `bindings: vec!["Stmt"]` — the first time
-   either field has been non-empty since A1.
-4. Add `crates/calc-syntax/src/resolve.rs`: `resolve(expr: &Expr) -> Result<(),
-   Vec<ResolveError>>` (`UnresolvedIdentifier`/`DuplicateBinding`), walking `Expr`
-   with a `Vec<HashMap<String, ()>>` scope stack pushed/popped per `Expr::Block`;
-   accumulates every error rather than stopping at the first.
-5. Export `resolve`/`ResolveError`/`Stmt` from `calc-syntax`'s `lib.rs`.
-6. Update A2's existing `If`-shape tests (branches are now `Expr::Block`s with empty
-   `stmts`) and add tests: parsing a `Block` with `let` statements, `resolve`'s two
-   error cases (unresolved identifier, duplicate binding), `resolve` succeeding on a
-   valid block, and cross-scope shadowing being allowed; extend the `role_model()`
-   test for the new `scopes`/`bindings`/`"let"` entries.
-7. Log the `let ... in ...`-vs-block-statements choice (and deferring the §7.3
-   built-in refactor to optional session A17) in `DECISIONS.md`.
-8. Write `calc-lang/docs/a3-scopes-bindings-and-resolution.md` (scopes/bindings/
-   symbol-table concepts, the design choice, `resolve`'s walk, and why resolution
-   isn't routed through built-ins yet) and add it to `docs/README.md`'s index.
+1. Add `crates/calc-ir/src/ir.rs`: the mid-level IR types — `Temp` (a
+   three-address-code temporary, doc-commented since the term isn't self-evident),
+   `Instr` (`Const`/`BinOp`/`Copy`/`If`, reusing `calc_syntax::BinOp` as-is), `Block`
+   (`Vec<Instr>`, straight-line, no internal branches), and `Program { body, result
+   }`. `If` nests two `Block`s directly (structured control flow) rather than using
+   jump-connected basic blocks.
+2. Add `crates/calc-ir/src/ast_to_ir.rs`: `lower(expr: &Expr) -> Program`, a
+   recursive `lower_expr` mirroring `resolve.rs`'s scope-stack walk
+   (`Vec<HashMap<String, Temp>>`, pushed/popped per `Expr::Block`). Variables reuse
+   the temp their binding computed into (no load/store instructions needed, since
+   A3's `resolve` already guarantees bind-before-use). `If` lowers each branch into
+   its own instruction sequence, ending each with an `Instr::Copy` into one shared
+   `dst` temp ("phi via copies", since a structured `If` has no natural point for an
+   SSA `Phi` node). Assumes its input already passed `calc_syntax::resolve()`; an
+   unresolved lookup panics rather than returning a `Result` (lowering isn't a
+   validation boundary).
+3. Wire `calc-ir`'s `Cargo.toml` to depend on `calc-syntax` (path dependency); update
+   `lib.rs` to `pub mod ir; pub mod ast_to_ir;` plus re-exports.
+4. Test in `ast_to_ir.rs`: lower `"{ let x = 1; if x { x + 1 } else { 2 } }"` (parsed
+   via `LalrpopFrontend`) and assert the resulting `Program` equals a literal
+   expected IR value, checking every instruction and temp number.
+5. Log two choices in `DECISIONS.md`: deferring `Loop`/`Break`/`Continue`/`Return`
+   IR variants (spec.md §8.1 lists them, but `calc-lang`'s AST has no construct to
+   lower from yet — same reasoning as A2's `Stmt` deferral) and the "phi via copies"
+   technique for `If`'s branch merge.
+6. Write `calc-lang/docs/a4-mid-level-ir-and-lowering.md` (why compilers use a
+   mid-level IR, three-address code, structured control-flow nodes vs. basic-block
+   jumps, the "phi via copies" merge, a worked trace of the test program) and add it
+   to `docs/README.md`'s index.
 
 ## Outcome
 
 Implemented as planned; no departures. `cargo build && cargo test` from `calc-lang/`
-passes: 9 tests in `calc-syntax` (the 4 existing A1/A2 tests — 2 updated for the new
-`Expr::Block`-wrapped `If` branches, 1 extended for the new `RoleModel` fields — plus
-5 new: a `Block`/`Stmt` parse-shape test and 4 `resolve` tests covering both error
-cases, a successful resolution, and cross-scope shadowing), all others unaffected.
+passes: 1 new test in `calc-ir` (`ast_to_ir::tests::lowers_a_let_bound_if_expression`)
+plus all 9 existing `calc-syntax` tests (A1–A3) unaffected.

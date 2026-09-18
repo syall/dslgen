@@ -69,3 +69,30 @@ plug a pluggable implementation into; building it by hand first here (per roadma
 A3's own framing, "role-annotation concepts... by hand") gives A17 a concrete,
 tested implementation to extract behind that interface later, mirroring how A0–A2
 built LALRPOP by hand before any generalization was attempted.
+
+## A4 — Only `If` in the IR; deferring `Loop`/`Break`/`Continue`/`Return`
+
+spec.md §8.1 describes the mid-level IR's eventual control-flow vocabulary as `If`,
+`Loop`, `Break`/`Continue`, and `Return`. `calc-ir::ir::Instr` implements only `If`.
+`calc-lang`'s AST has no loop or early-return construct — no grammar rule produces
+one — so there is nothing for those variants to lower from. Adding them now would be
+exactly the kind of speculative scaffolding A2's `Stmt` deferral already argued
+against: untested enum variants nothing constructs, added because the spec mentions
+them rather than because anything needs them. They'll be added in whichever future
+session first gives `calc-lang` a loop or `return` construct, the same way A3 added
+`Stmt` only once `let` existed to justify it.
+
+## A4 — "Phi via copies" for `If`'s branch merge
+
+`calc-lang`'s `if`/`else` is an *expression* — both branches must funnel into one
+value the surrounding code can use — but the IR represents control flow with a
+structured `Instr::If` node (two nested `Block`s), not a jump-connected CFG, so
+there's no natural single point to insert an SSA `phi` the way LLVM would. Instead,
+`ast_to_ir::lower` ends each branch's instruction sequence with an explicit
+`Instr::Copy { dst, src: <branch's result temp> }`, where `dst` is the same `Temp`
+for both branches. This is a standard, simple technique ("phi elimination via
+copies") and keeps the IR's instruction set free of a `Phi` node that would only
+ever appear in exactly one place (structured `If`'s merge point). It's also the one
+place this IR isn't strictly SSA — `dst` has two static definition sites — which
+matches spec.md §8.1's "roughly SSA-ish" phrasing rather than a strict-SSA
+guarantee.
