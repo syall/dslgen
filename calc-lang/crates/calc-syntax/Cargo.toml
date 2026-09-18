@@ -5,3 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+lalrpop-util = { version = "0.23.1", features = ["lexer"] }
+
+[build-dependencies]
+lalrpop = "0.23.1"

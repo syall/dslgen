@@ -2,7 +2,7 @@
 
 ## A0 — Parser frontend
 
-Parsing will be built from the start behind a `ParserFrontend` trait (SPEC.md §5),
+Parsing will be built from the start behind a `ParserFrontend` trait (spec.md §5),
 mirroring the pluggable `Backend` trait from §8.1 one layer earlier. No stage
 downstream of parsing (role-driven lowering, codegen, the LSP) will depend on which
 concrete frontend produced the AST — only on the trait's typed AST + role model
