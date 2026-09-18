@@ -120,9 +120,22 @@ covers, following the existing entries' style.
 
 ## 7. Verify
 
-Run `cargo build && cargo test` from `calc-lang/`. Both must pass before this session
-counts as done — this is CLAUDE.md §4's only required check, and it's also what CI
-(agent-evals.yml) runs on every push, so a failure here is a failure there.
+While implementing, `cargo build && cargo test` from `calc-lang/` is enough to check
+progress. Before committing (step 8), run the full sequence CLAUDE.md §4 and CI
+(agent-evals.yml) both require, in order, from `calc-lang/`:
+
+```bash
+cargo fmt
+cargo check --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo audit
+cargo build --workspace
+cargo test --workspace
+```
+
+All of it must pass — a commit should never land something CI would reject. (`cargo
+audit` needs a one-time `cargo install cargo-audit --locked` if it isn't on PATH yet.)
 
 ## 8. Commit and push — only with the user's explicit go-ahead
 
@@ -137,7 +150,7 @@ Follow the existing commit message style from `git log` — short imperative sum
 naming the session, e.g. "Add A2: typed AST and semantic actions".
 
 Only push if the user separately and explicitly asks for that too. If they do, push,
-then move to step 9.
+then move to step 9, then step 10.
 
 ## 9. Sync — or create — the "DSL-Generator Roadmap" Artifact — only after an explicit push
 
@@ -217,3 +230,44 @@ read the repo live, so it only ever reflects reality if this step keeps it in sy
 4. `Artifact` `publish` it with title "DSL-Generator Roadmap" and a fitting favicon (the
    existing one used 🛠️). Tell the user the new URL — it's needed for every future
    sync, and there's no other record of it once published.
+
+## 10. Refresh the GitHub Pages snapshot — every time a session is pushed
+
+The `docs` branch's root `index.html` is a public, standalone mirror of the
+Artifact — it's what's actually live at `https://syall.github.io/dslgen/` once
+GitHub Pages is configured with Source: `docs` / `(root)` (a one-time repo-settings
+step; skip re-suggesting it once it's already been done).
+
+Unlike a one-off publish, the user has made this step's `docs`-branch push a
+standing part of this workflow: run it automatically right after step 9, every time
+step 8's `main` push happens, with no separate per-session confirmation. This
+pre-authorization is scoped narrowly to this one action (refreshing this snapshot on
+the `docs` branch after a session lands) — it isn't a general license to push
+anywhere else without asking, and `main`'s push in step 8 still needs its own
+explicit go-ahead each time.
+
+Steps:
+
+1. Make sure step 9 already ran (or `Artifact` `read` the live dashboard) so this
+   snapshot reflects real, current state rather than stale data — the GitHub Pages
+   copy should always be a snapshot *of* the Artifact, not a second source of truth
+   maintained independently.
+2. Work in an isolated git worktree for the `docs` branch (`git worktree add
+   <tmp-path> docs`, or `git worktree add <tmp-path> --orphan docs` the first time
+   the branch doesn't exist yet) so this never disturbs whatever's in progress on
+   `main` — the branch is an unrelated root history, not a merge target.
+3. Turn the Artifact's HTML into a standalone page at that worktree's `index.html`
+   (root, not a nested `docs/` folder — the Pages source is already `docs` branch
+   `/` root): give it a proper `<!DOCTYPE html><head>` with `<title>` and a
+   `<meta name="description">`, the same Google Fonts `<link>`s and CSS custom
+   properties (incl. `prefers-color-scheme: dark`) the artifact uses, and drop
+   anything specific to the Claude Artifact platform's own chrome.
+4. Commit in that worktree with a message naming the commit it's synced to (the
+   existing `index.html` was committed as "Add roadmap status page for GitHub
+   Pages" citing `main@<sha>` — follow that pattern for the SHA it now reflects),
+   then push the `docs` branch, per the standing pre-authorization above.
+5. Remove the temporary worktree once pushed.
+
+If the user ever wants this wired into CI instead of run through this skill, that's
+new scope (a GitHub Actions workflow) — don't build it speculatively per CLAUDE.md's
+"don't restructure or generalize ahead of need"; only add it if asked.
