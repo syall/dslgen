@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSL-Generator Roadmap</title>
+<meta name="description" content="Progress through DSL-Generator's roadmap.md: sessions completed, in progress, and upcoming across Parts A, B, and C.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f7f6f2;
+    --surface:#ffffff;
+    --surface-2:#efece4;
+    --border:#ddd8cc;
+    --text:#1c1a15;
+    --text-dim:#6b6656;
+    --accent:#c65d1e;
+    --accent-soft:#f3ddc8;
+    --done:#2f7a5c;
+    --done-soft:#dcefe4;
+    --optional:#8a7f5e;
+    --optional-soft:#efe9d8;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Source Sans 3", "Public Sans", -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#15140f;
+      --surface:#1d1c16;
+      --surface-2:#242219;
+      --border:#3a3728;
+      --text:#f1ede1;
+      --text-dim:#a49d84;
+      --accent:#e88a45;
+      --accent-soft:#3a2a17;
+      --done:#5fbf93;
+      --done-soft:#1c2e26;
+      --optional:#c9bd8f;
+      --optional-soft:#2c2917;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15140f;
+    --surface:#1d1c16;
+    --surface-2:#242219;
+    --border:#3a3728;
+    --text:#f1ede1;
+    --text-dim:#a49d84;
+    --accent:#e88a45;
+    --accent-soft:#3a2a17;
+    --done:#5fbf93;
+    --done-soft:#1c2e26;
+    --optional:#c9bd8f;
+    --optional-soft:#2c2917;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    padding-block:40px;
+  }
+  .wrap{
+    max-width:880px;
+    margin:0 auto;
+    padding-inline:20px;
+  }
+
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(28px,5vw,38px);
+    line-height:1.1;
+    margin:0 0 8px;
+    text-wrap:balance;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--text-dim);
+    font-size:15px;
+    max-width:60ch;
+    line-height:1.5;
+    margin:0 0 28px;
+  }
+  .sub code{font-family:var(--mono); font-size:0.92em;}
+
+  /* overall stat band */
+  .stat-band{
+    display:flex;
+    gap:24px;
+    align-items:center;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:22px 24px;
+    margin-bottom:28px;
+    flex-wrap:wrap;
+  }
+  .stat-num{
+    font-family:var(--mono);
+    font-size:42px;
+    font-weight:600;
+    line-height:1;
+    color:var(--accent);
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+  }
+  .stat-num small{
+    font-size:16px;
+    color:var(--text-dim);
+    font-weight:500;
+  }
+  .stat-body{flex:1; min-width:200px;}
+  .stat-label{font-size:13px; color:var(--text-dim); margin-bottom:8px;}
+  .bar-track{
+    height:8px;
+    border-radius:999px;
+    background:var(--surface-2);
+    overflow:hidden;
+    border:1px solid var(--border);
+  }
+  .bar-fill{
+    height:100%;
+    background:linear-gradient(90deg, var(--done), var(--accent));
+    border-radius:999px;
+  }
+  .stat-next{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text-dim);
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 12px;
+    white-space:nowrap;
+  }
+  .stat-next b{color:var(--text); font-weight:600;}
+
+  /* part progress row */
+  .parts{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:14px;
+    margin-bottom:32px;
+  }
+  @media (max-width:600px){ .parts{grid-template-columns:1fr;} }
+  .part-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px 18px;
+  }
+  .part-card h3{
+    margin:0 0 4px;
+    font-size:15px;
+  }
+  .part-card .desc{
+    font-size:12.5px;
+    color:var(--text-dim);
+    line-height:1.4;
+    margin:0 0 12px;
+    min-height:34px;
+  }
+  .part-count{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text-dim);
+    display:flex;
+    justify-content:space-between;
+    margin-bottom:6px;
+  }
+  .part-count b{color:var(--text);}
+
+  /* session list */
+  details.part-group{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    margin-bottom:14px;
+    overflow:hidden;
+  }
+  details.part-group > summary{
+    cursor:pointer;
+    list-style:none;
+    padding:16px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-weight:600;
+    font-size:15px;
+  }
+  details.part-group > summary::-webkit-details-marker{display:none;}
+  details.part-group > summary .chev{
+    color:var(--text-dim);
+    font-size:12px;
+    font-family:var(--mono);
+    transition:transform 0.15s ease;
+  }
+  details.part-group[open] > summary .chev{transform:rotate(90deg);}
+  .rows{
+    border-top:1px solid var(--border);
+  }
+  .row{
+    display:grid;
+    grid-template-columns:96px 1fr auto;
+    gap:14px;
+    align-items:center;
+    padding:11px 18px;
+    border-bottom:1px solid var(--border);
+    font-size:13.5px;
+  }
+  .row:last-child{border-bottom:none;}
+  .row.is-done{background:color-mix(in srgb, var(--done-soft) 55%, transparent);}
+  a.row{text-decoration:none; color:inherit; transition:background 0.12s ease;}
+  a.row.is-done:hover{background:color-mix(in srgb, var(--done-soft) 85%, transparent);}
+  a.row.is-done .row-desc b{text-decoration:underline; text-decoration-color:var(--done); text-decoration-thickness:1.5px; text-underline-offset:2px;}
+  .doc-icon{font-size:11px; color:var(--done); margin-left:2px;}
+  a.part-link{color:inherit; text-decoration:none;}
+  a.part-link:hover h3{color:var(--accent);}
+  a.part-link h3{transition:color 0.12s ease;}
+  .sid{
+    font-family:var(--mono);
+    font-weight:600;
+    font-size:13px;
+    color:var(--text);
+  }
+  .row-desc{color:var(--text-dim); line-height:1.35;}
+  .row-desc b{color:var(--text); font-weight:600;}
+  .pill{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:999px;
+    white-space:nowrap;
+    border:1px solid transparent;
+  }
+  .pill.done{background:var(--done-soft); color:var(--done); border-color:var(--done);}
+  .pill.next{background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
+  .pill.todo{background:var(--surface-2); color:var(--text-dim); border-color:var(--border);}
+  .pill.opt{background:var(--optional-soft); color:var(--optional); border-color:var(--optional);}
+
+  @media (max-width:600px){
+    .row{grid-template-columns:1fr auto; grid-template-areas:"id pill" "desc desc";}
+    .sid{grid-area:id;}
+    .pill{grid-area:pill; justify-self:end;}
+    .row-desc{grid-area:desc;}
+  }
+
+  footer{
+    margin-top:30px;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+    font-size:12.5px;
+    color:var(--text-dim);
+    line-height:1.6;
+  }
+  footer code{font-family:var(--mono); font-size:0.95em; color:var(--text);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">AI-native SDLC · Build stage · roadmap.md</p>
+  <h1>DSL-Generator build roadmap</h1>
+  <p class="sub">Progress through <code>roadmap.md</code>'s session plan for DSL-Generator's hand-built calculator-language toolchain (Part A), its generalization into the <code>dslgen</code> meta-tool (Part B), and advanced polish (Part C).</p>
+
+  <div class="stat-band">
+    <div class="stat-num">7<small>/33</small></div>
+    <div class="stat-body">
+      <div class="stat-label">Required-path sessions complete — 21%</div>
+      <div class="bar-track"><div class="bar-fill" style="width:21.2%"></div></div>
+    </div>
+    <div class="stat-next">Next up: <b>A7</b> — LLVM codegen backend</div>
+  </div>
+
+  <div class="parts">
+    <a class="part-link" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/README.md">
+    <div class="part-card">
+      <h3>Part A — Hand-built calc-lang</h3>
+      <p class="desc">One DSL toolchain built entirely by hand, no generation.</p>
+      <div class="part-count"><span>Sessions</span><b>7 / 17</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:41.2%"></div></div>
+    </div>
+    </a>
+    <div class="part-card">
+      <h3>Part B — Generalize into dslgen</h3>
+      <p class="desc">Extract Part A's code into the generic meta-tool.</p>
+      <div class="part-count"><span>Sessions</span><b>0 / 10</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+    </div>
+    <div class="part-card">
+      <h3>Part C — Advanced &amp; polish</h3>
+      <p class="desc">Retargeting, memory strategies, differential tests, docs.</p>
+      <div class="part-count"><span>Sessions</span><b>0 / 6</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- PART A -->
+  <details class="part-group" open>
+    <summary>Part A — Hand-build calc-lang <span class="chev">▸</span></summary>
+    <div class="rows">
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a0-workspace-and-parser-decision.md"><span class="sid">A0</span><span class="row-desc"><b>Workspace setup.</b> Cargo workspace scaffold; ParserFrontend trait decision (LALRPOP first). <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a1-parserfrontend-trait-and-lalrpop.md"><span class="sid">A1</span><span class="row-desc"><b>ParserFrontend trait.</b> LalrpopFrontend parses arithmetic, variables, if/else. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <div class="row"><span class="sid">A1-pest</span><span class="row-desc"><b>Alt frontend: pest.</b> Optional side branch proving the trait boundary.</span><span class="pill opt">Optional</span></div>
+      <div class="row"><span class="sid">A1-custom</span><span class="row-desc"><b>Alt frontend: hand-written.</b> Optional recursive-descent parser, no grammar file.</span><span class="pill opt">Optional</span></div>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a2-typed-ast-and-semantic-actions.md"><span class="sid">A2</span><span class="row-desc"><b>Typed AST.</b> Real Expr/Stmt types replace raw parser output. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a3-scopes-bindings-and-resolution.md"><span class="sid">A3</span><span class="row-desc"><b>Scopes &amp; bindings.</b> Block-scoped let, symbol table, name resolution. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a4-mid-level-ir-and-lowering.md"><span class="sid">A4</span><span class="row-desc"><b>Mid-level IR.</b> Flatter IR types plus ast_to_ir::lower(). <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a5-tree-walking-interpreter.md"><span class="sid">A5</span><span class="row-desc"><b>Tree-walking interpreter.</b> calcc run --interpret works end to end. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a6-cranelift-codegen-backend.md"><span class="sid">A6</span><span class="row-desc"><b>Cranelift backend.</b> calcc build --backend=cranelift emits an object file. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <div class="row"><span class="sid">A7</span><span class="row-desc"><b>LLVM backend.</b> Equivalent output via inkwell, compared against Cranelift.</span><span class="pill next">Next</span></div>
+      <div class="row"><span class="sid">A8</span><span class="row-desc"><b>Backend trait.</b> Feature-gated backend selection, one trait for both.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A9</span><span class="row-desc"><b>Built-ins: native Rust.</b> add/mul callable through both backends.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A10</span><span class="row-desc"><b>Built-ins: C-ABI FFI.</b> One FFI built-in linked into a tiny C library.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A11</span><span class="row-desc"><b>Built-ins: subprocess/IPC.</b> format_currency backed by a Python worker.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A12</span><span class="row-desc"><b>Link driver.</b> Object files to a runnable native executable.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A13</span><span class="row-desc"><b>calcc CLI.</b> build/run --interpret/check, --backend threaded through.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A14</span><span class="row-desc"><b>Generated LSP.</b> calc-lsp: diagnostics, semantic tokens, hover/definition.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A15</span><span class="row-desc"><b>Cranelift-JIT hot reload.</b> calcc run --hot-reload patches on save.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A16</span><span class="row-desc"><b>Manual memory strategy.</b> alloc/free declared as built-ins.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A17</span><span class="row-desc"><b>Scope primitives as built-ins.</b> Optional refactor of A3's resolver.</span><span class="pill opt">Optional</span></div>
+    </div>
+  </details>
+
+  <!-- PART B -->
+  <details class="part-group">
+    <summary>Part B — Generalize into dslgen <span class="chev">▸</span></summary>
+    <div class="rows">
+      <div class="row"><span class="sid">B1</span><span class="row-desc"><b>Audit.</b> Map every Part A file to generic vs. per-DSL.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B2</span><span class="row-desc"><b>Extract dslgen-backend.</b> Backend trait, interpreter, IPC shim as a shared crate.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B3</span><span class="row-desc"><b>Extract dslgen-lsp.</b> tower-lsp scaffolding parameterized by a LanguageModel trait.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B4</span><span class="row-desc"><b>RoleModel.</b> Role-annotation parsing and validation.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B5</span><span class="row-desc"><b>Generic lowering.</b> A4's pass rewritten to consume role annotations.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B6</span><span class="row-desc"><b>bindings.toml.</b> Manifest parsing/validation for built-ins.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B7</span><span class="row-desc"><b>The code generator.</b> Templates a workspace from grammar + roles + bindings.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B8</span><span class="row-desc"><b>dslgen CLI.</b> new / check / build against a scaffolded project.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B9</span><span class="row-desc"><b>Second DSL.</b> Proves generation generalizes beyond calc-lang.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B10</span><span class="row-desc"><b>Frontend boundary via generator.</b> DSL × frontend regression matrix.</span><span class="pill todo">Upcoming</span></div>
+    </div>
+  </details>
+
+  <!-- PART C -->
+  <details class="part-group">
+    <summary>Part C — Advanced features &amp; polish <span class="chev">▸</span></summary>
+    <div class="rows">
+      <div class="row"><span class="sid">C1</span><span class="row-desc"><b>Retargetable built-ins.</b> Multi-target manifests, most-specific-match selection.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C2</span><span class="row-desc"><b>External overrides.</b> calcc.toml / --builtin-path precedence chain.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C3</span><span class="row-desc"><b>Second memory strategy.</b> Borrow-checked or GC, selectable per DSL.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C4</span><span class="row-desc"><b>Differential testing.</b> Interpreter as oracle against both backends.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C5</span><span class="row-desc"><b>Docs consolidation.</b> Order and cross-link the calc-lang/docs series.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C6</span><span class="row-desc"><b>Decision log.</b> Record how each of §14's open questions was resolved.</span><span class="pill todo">Upcoming</span></div>
+    </div>
+  </details>
+
+  <footer>
+    Counts track roadmap.md's <b>required path</b> (33 sessions across Parts A–C) — the three optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A17</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>1d29a58</code>, "Add A6: Cranelift codegen backend") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 done; A8 → A9 → A13 → B1 → B2 → B4 → B5 → B7 remain.
+  </footer>
+</div>
+</body>
+</html>
