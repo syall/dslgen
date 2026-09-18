@@ -1,0 +1,10 @@
+# Normalize line endings: store as LF, checkout per-platform default.
+* text=auto eol=lf
+
+# Source and text files
+*.rs text
+*.toml text
+*.md text
+*.json text
+*.yml text
+*.yaml text
