@@ -13,5 +13,8 @@ Read in order:
 2. [a1-parserfrontend-trait-and-lalrpop.md](a1-parserfrontend-trait-and-lalrpop.md) —
    what a parser-generator library does for you, and the `ParserFrontend` trait's
    first concrete implementation.
+3. [a2-typed-ast-and-semantic-actions.md](a2-typed-ast-and-semantic-actions.md) — what
+   an AST is and why it's typed per-rule, and how a grammar's semantic actions build
+   one; also covers why `calc-lang` doesn't have a `Stmt` type yet.
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

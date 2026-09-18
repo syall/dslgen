@@ -1,24 +1,24 @@
-use crate::lalrpop_frontend::{BinOp, RawAst};
+use crate::ast::{BinOp, Expr};
 
 grammar;
 
-pub Expr: RawAst = {
-    <l:Expr> "+" <r:Factor> => RawAst::BinOp(Box::new(l), BinOp::Add, Box::new(r)),
-    <l:Expr> "-" <r:Factor> => RawAst::BinOp(Box::new(l), BinOp::Sub, Box::new(r)),
+pub Expr: Expr = {
+    <l:Expr> "+" <r:Factor> => Expr::BinOp(Box::new(l), BinOp::Add, Box::new(r)),
+    <l:Expr> "-" <r:Factor> => Expr::BinOp(Box::new(l), BinOp::Sub, Box::new(r)),
     Factor,
 };
 
-Factor: RawAst = {
-    <l:Factor> "*" <r:Term> => RawAst::BinOp(Box::new(l), BinOp::Mul, Box::new(r)),
-    <l:Factor> "/" <r:Term> => RawAst::BinOp(Box::new(l), BinOp::Div, Box::new(r)),
+Factor: Expr = {
+    <l:Factor> "*" <r:Term> => Expr::BinOp(Box::new(l), BinOp::Mul, Box::new(r)),
+    <l:Factor> "/" <r:Term> => Expr::BinOp(Box::new(l), BinOp::Div, Box::new(r)),
     Term,
 };
 
-Term: RawAst = {
-    Num => RawAst::Number(<>),
-    Ident => RawAst::Var(<>),
+Term: Expr = {
+    Num => Expr::Number(<>),
+    Ident => Expr::Var(<>),
     "if" <c:Expr> "{" <t:Expr> "}" "else" "{" <e:Expr> "}" =>
-        RawAst::If(Box::new(c), Box::new(t), Box::new(e)),
+        Expr::If { cond: Box::new(c), then_branch: Box::new(t), else_branch: Box::new(e) },
     "(" <Expr> ")",
 };
 

@@ -1,32 +1,16 @@
 //! `LalrpopFrontend`: the first concrete `ParserFrontend` (spec.md §5), covering
-//! arithmetic expressions with variables, numeric literals, and `if`/`else`. The AST
-//! type here (`RawAst`) is a throwaway shape for proving the trait boundary works end
-//! to end — session A2 redesigns it into a proper `calc-syntax::ast` module.
+//! arithmetic expressions with variables, numeric literals, and `if`/`else`. Its
+//! actions build `crate::ast::Expr` values directly (session A2) — see `ast.rs`.
 
+use crate::ast::Expr;
 use crate::frontend::{ControlFlowRole, ParseDiagnostic, ParserFrontend, RoleModel};
 
 lalrpop_util::lalrpop_mod!(pub calc);
 
-#[derive(Debug, Clone)]
-pub enum RawAst {
-    Number(f64),
-    Var(String),
-    BinOp(Box<RawAst>, BinOp, Box<RawAst>),
-    If(Box<RawAst>, Box<RawAst>, Box<RawAst>),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-}
-
 pub struct LalrpopFrontend;
 
 impl ParserFrontend for LalrpopFrontend {
-    type Ast = RawAst;
+    type Ast = Expr;
 
     fn parse(&self, src: &str) -> Result<Self::Ast, Vec<ParseDiagnostic>> {
         calc::ExprParser::new()
@@ -65,6 +49,7 @@ fn convert_error<T: std::fmt::Debug>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::BinOp;
 
     /// Throwaway: exercises `parse()` only through the `ParserFrontend` trait, never
     /// the LALRPOP-generated `calc::ExprParser` type directly, so later sessions can
@@ -76,12 +61,28 @@ mod tests {
             .parse("if x - 1 { 2 + 3 * 4 } else { y / 2 }")
             .expect("should parse");
 
-        assert_eq!(
-            format!("{ast:?}"),
-            "If(BinOp(Var(\"x\"), Sub, Number(1.0)), \
-             BinOp(Number(2.0), Add, BinOp(Number(3.0), Mul, Number(4.0))), \
-             BinOp(Var(\"y\"), Div, Number(2.0)))"
-        );
+        let expected = Expr::If {
+            cond: Box::new(Expr::BinOp(
+                Box::new(Expr::Var("x".to_string())),
+                BinOp::Sub,
+                Box::new(Expr::Number(1.0)),
+            )),
+            then_branch: Box::new(Expr::BinOp(
+                Box::new(Expr::Number(2.0)),
+                BinOp::Add,
+                Box::new(Expr::BinOp(
+                    Box::new(Expr::Number(3.0)),
+                    BinOp::Mul,
+                    Box::new(Expr::Number(4.0)),
+                )),
+            )),
+            else_branch: Box::new(Expr::BinOp(
+                Box::new(Expr::Var("y".to_string())),
+                BinOp::Div,
+                Box::new(Expr::Number(2.0)),
+            )),
+        };
+        assert_eq!(ast, expected);
     }
 
     #[test]
@@ -98,5 +99,22 @@ mod tests {
         assert!(roles.keywords.contains(&"if".to_string()));
         assert!(roles.keywords.contains(&"else".to_string()));
         assert_eq!(roles.control_flow.len(), 1);
+    }
+
+    /// The roadmap's named A2 test case: a minimal `if`/`else` parses into the exact
+    /// typed `Expr` shape, not just "parses without error".
+    #[test]
+    fn parses_if_else_into_typed_ast_shape() {
+        let frontend = LalrpopFrontend;
+        let ast = frontend.parse("if x { 1 } else { 2 }").expect("should parse");
+
+        assert_eq!(
+            ast,
+            Expr::If {
+                cond: Box::new(Expr::Var("x".to_string())),
+                then_branch: Box::new(Expr::Number(1.0)),
+                else_branch: Box::new(Expr::Number(2.0)),
+            }
+        );
     }
 }
