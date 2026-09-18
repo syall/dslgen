@@ -47,10 +47,25 @@ section(s) when a change implements spec'd behavior.
 
 ## 4. Test — verifying your work, CI evals
 
-- Verifying your work: `cargo build && cargo test` from `calc-lang/`.
-- [.github/workflows/agent-evals.yml](.github/workflows/agent-evals.yml) runs the
-  same on every push/PR to `main`. Keep new crates' tests runnable by plain
-  `cargo test` so this stays the only CI step needed.
+- While iterating: `cargo build && cargo test` from `calc-lang/` is enough — no
+  need to run `fmt`/`check`/`clippy`/`doc`/`audit` on every loop.
+- Before committing: run `cargo fmt` (fixes formatting, unlike CI's
+  `--check`), then the same checks CI runs, in order:
+  - `cargo check --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings` — `--all-targets`
+    so test code gets linted too, not just lib/bin.
+  - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` — doc
+    warnings matter here beyond hygiene: spec.md §12 commits to
+    teaching-quality generated docs as a deliverable.
+  - `cargo audit` (one-time setup: `cargo install cargo-audit --locked`) —
+    checks `Cargo.lock` against the RustSec advisory database.
+  - `cargo build --workspace`
+  - `cargo test --workspace`
+  So a commit never lands something CI would reject.
+- [.github/workflows/agent-evals.yml](.github/workflows/agent-evals.yml) runs
+  the same set on every push/PR to `main`. Keep new crates' `fmt`/`clippy`/
+  `doc`-clean and tests runnable by plain `cargo test` so this stays the only
+  CI step needed.
 
 ## 5. Deploy — not set up yet
 

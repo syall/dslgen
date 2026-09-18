@@ -89,7 +89,8 @@ fn define_calc_main(module: &mut ObjectModule, func_id: FuncId, program: &Progra
     // fresh one on every repeat.
     let mut vars = VarMap::new();
     for temp in collect_temps(program) {
-        vars.entry(temp).or_insert_with(|| builder.declare_var(types::F64));
+        vars.entry(temp)
+            .or_insert_with(|| builder.declare_var(types::F64));
     }
 
     lower_block(&program.body, &mut builder, &vars);
@@ -301,9 +302,6 @@ mod tests {
 
     #[test]
     fn compiles_and_runs_a_let_bound_if_expression() {
-        assert_matches_interpreter(
-            "{ let x = 1; if x { x + 1 } else { 2 } }",
-            "let_bound_if",
-        );
+        assert_matches_interpreter("{ let x = 1; if x { x + 1 } else { 2 } }", "let_bound_if");
     }
 }

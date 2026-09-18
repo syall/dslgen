@@ -113,8 +113,8 @@ fn lower_expr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calc_syntax::{BinOp, ParserFrontend};
     use calc_syntax::lalrpop_frontend::LalrpopFrontend;
+    use calc_syntax::{BinOp, ParserFrontend};
 
     #[test]
     fn lowers_a_let_bound_if_expression() {

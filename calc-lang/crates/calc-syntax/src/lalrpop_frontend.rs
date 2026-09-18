@@ -28,7 +28,6 @@ impl ParserFrontend for LalrpopFrontend {
             }],
             scopes: vec!["Block".to_string()],
             bindings: vec!["Stmt".to_string()],
-            ..Default::default()
         }
     }
 }
@@ -120,7 +119,9 @@ mod tests {
     #[test]
     fn parses_if_else_into_typed_ast_shape() {
         let frontend = LalrpopFrontend;
-        let ast = frontend.parse("if x { 1 } else { 2 }").expect("should parse");
+        let ast = frontend
+            .parse("if x { 1 } else { 2 }")
+            .expect("should parse");
 
         assert_eq!(
             ast,

@@ -130,12 +130,18 @@ mod tests {
 
     #[test]
     fn a_nonzero_condition_takes_the_then_branch() {
-        assert_eq!(interpret_source("if 1 { 1 } else { 2 }"), Value::Number(1.0));
+        assert_eq!(
+            interpret_source("if 1 { 1 } else { 2 }"),
+            Value::Number(1.0)
+        );
     }
 
     #[test]
     fn a_zero_condition_takes_the_else_branch() {
-        assert_eq!(interpret_source("if 0 { 1 } else { 2 }"), Value::Number(2.0));
+        assert_eq!(
+            interpret_source("if 0 { 1 } else { 2 }"),
+            Value::Number(2.0)
+        );
     }
 
     #[test]

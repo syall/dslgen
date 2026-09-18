@@ -31,7 +31,11 @@ pub fn resolve(expr: &Expr) -> Result<(), Vec<ResolveError>> {
     }
 }
 
-fn resolve_expr(expr: &Expr, scopes: &mut Vec<HashMap<String, ()>>, errors: &mut Vec<ResolveError>) {
+fn resolve_expr(
+    expr: &Expr,
+    scopes: &mut Vec<HashMap<String, ()>>,
+    errors: &mut Vec<ResolveError>,
+) {
     match expr {
         Expr::Number(_) => {}
         Expr::Var(name) => {
