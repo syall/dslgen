@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/calc-syntax",
+    "crates/calc-ir",
+    "crates/calc-compiler",
+    "crates/calc-lsp",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"

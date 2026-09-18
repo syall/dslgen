@@ -1,0 +1,13 @@
+[package]
+name = "calc-compiler"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "calcc"
+path = "src/main.rs"
+
+[dependencies]
+calc-syntax = { path = "../calc-syntax" }
+calc-ir = { path = "../calc-ir" }

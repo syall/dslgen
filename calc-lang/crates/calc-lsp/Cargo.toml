@@ -1,0 +1,8 @@
+[package]
+name = "calc-lsp"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+calc-syntax = { path = "../calc-syntax" }
