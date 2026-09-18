@@ -31,5 +31,10 @@ Read in order:
    a dense `Temp`-indexed array rather than a name-keyed map, since variable names are
    already gone by the time IR exists; and how `if`'s truthiness is defined with no
    boolean type in the language.
+7. [a6-cranelift-codegen-backend.md](a6-cranelift-codegen-backend.md) — what a real
+   codegen backend does differently from an interpreter; Cranelift IR basics (blocks,
+   values, the builder); how Cranelift's `Variable`/SSA-construction mechanism avoids
+   hand-writing `phi` nodes for `if`/`else`; and the first real use of the interpreter
+   as a correctness oracle for a codegen backend's output.
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

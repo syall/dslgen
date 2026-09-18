@@ -10,7 +10,7 @@ pub use calc_syntax::BinOp;
 /// terminology) — distinct from a source-level variable name. Every instruction
 /// names the `Temp` it writes to; operands reference other instructions' `Temp`s
 /// rather than nested sub-expressions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Temp(pub u32);
 
 #[derive(Debug, Clone, PartialEq)]

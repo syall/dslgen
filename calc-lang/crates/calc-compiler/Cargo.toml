@@ -11,3 +11,10 @@ path = "src/main.rs"
 [dependencies]
 calc-syntax = { path = "../calc-syntax" }
 calc-ir = { path = "../calc-ir" }
+cranelift-codegen = "0.135.2"
+cranelift-frontend = "0.135.2"
+cranelift-module = "0.135.2"
+cranelift-object = "0.135.2"
+cranelift-native = "0.135.2"
+target-lexicon = "0.13.5"
+cc = "1.4.6"

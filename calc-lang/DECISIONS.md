@@ -123,3 +123,46 @@ is true, zero is false," mirroring C's convention, since there is nothing else i
 AST or spec to check a condition against. This is purely an interpreter-level runtime
 semantics decision; it doesn't require or imply adding a boolean type anywhere
 upstream.
+
+## A6 — Cranelift `Variable`/SSA-construction instead of manual phi-threading
+
+`cranelift_backend::define_calc_main` maps every `calc_ir::Temp` to a Cranelift
+`Variable` and lowers `Const`/`BinOp`/`Copy`/`If` using `declare_var`/`def_var`/
+`use_var`, rather than tracking a `Temp -> cranelift Value` table and manually
+threading a block parameter through `If`'s merge point (the "textbook" way to
+build SSA `phi`s by hand in an IR builder). Cranelift's `Variable` mechanism exists
+specifically to let a backend author write "mutable-looking" locals and have
+Cranelift's own SSA-construction algorithm (Braun et al.) insert the right `phi`s
+at block boundaries automatically — so `Instr::If`'s two branches each just
+`def_var` the same destination `Temp`'s variable, and reading it back in the
+sealed `merge` block resolves correctly with no manual plumbing. This is a direct
+structural echo of A4's own "phi via copies" decision (`Instr::Copy` ending each
+`If` branch, because the mid-level IR itself isn't strict SSA at that one point) —
+Cranelift's `Variable` abstraction is, in effect, the same trick one layer down,
+and picking it over manual block arguments means the codegen backend doesn't have
+to re-solve a problem the mid-level IR already worked around.
+
+## A6 — `main() -> i32` exit-code convention, and an explicitly provisional link stub
+
+`cranelift_backend::compile_to_object` emits the compiled program as
+`calc_main() -> f64` plus a small C-ABI `main() -> i32` that calls it and returns
+`fcvt_to_sint_sat` of the result. calc-lang has no I/O and no built-ins yet (A9–A11
+haven't landed), so there is no way for a compiled, linked executable to report its
+answer except through some OS-visible side channel — the process's exit code is
+the simplest one available, and it's exactly what this session's own tests check
+against `calc_ir::interpret`'s result. This convention is expected to become
+unnecessary, not be built on, once A9 lands real built-ins.
+
+Turning the object file into a runnable executable at all requires a linker, which
+is properly A12's job ("The link driver"). `crates/calc-compiler/src/link_stub.rs`
+is a deliberately minimal, explicitly-labeled stand-in: it shells out to whatever
+system C toolchain the `cc` crate finds (MSVC's `cl.exe`, or a Unix-style `cc`),
+using only the *linking* half of what that toolchain can do. It's real enough to
+make this session's tests genuinely link-and-run rather than only checking that
+codegen produced *some* bytes, but it doesn't attempt A12's actual scope (assembling
+FFI/IPC runtime libraries alongside the object file) and should be replaced, not
+extended, when A12 is built. One MSVC-specific wrinkle fell out of this: a
+hand-built object file carries none of the `/DEFAULTLIB` directives a real
+`cl.exe`-compiled object would, so `libcmt.lib`/`libvcruntime.lib`/`libucrt.lib`
+have to be named explicitly on the MSVC link line for `mainCRTStartup` (which calls
+`main`) to resolve — Unix-style `cc`/`gcc` needed no equivalent change.
