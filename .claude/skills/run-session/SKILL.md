@@ -15,12 +15,24 @@ Argument: a session ID from roadmap.md (`A0`, `A1`, `A1-pest`, `A3`, `B2`, `C4`,
 If none was given, don't guess — figure out the next unstarted session (see step 0)
 and ask the user to confirm before doing anything else.
 
+**Where the teaching docs live.** Steps 0, 1, 6, and 9 all need the current location
+of the per-session teaching-doc series (spec.md §12). As of Part A that's
+`calc-lang/docs/`, named in CLAUDE.md's "Workspace layout" section — but CLAUDE.md is
+explicit that it gets updated whenever a convention like this changes, and Part B's
+whole job is generalizing Part A's per-DSL layout (roadmap.md B1–B7), so the location
+may well move once generation is in play (e.g. to a per-generated-workspace `docs/`
+rather than one fixed path in this repo). Before relying on a docs path, re-read
+CLAUDE.md's current "Workspace layout" section rather than assuming `calc-lang/docs/`
+— treat every `calc-lang/docs/` mention below as "wherever that section currently
+points," not a hardcoded path.
+
 ## 0. Resolve the session
 
 If no session ID was given: read roadmap.md top to bottom, and cross-check against
-`calc-lang/docs/` (one page per completed session) and `git log` (one "Add <ID>: ..."
-commit per completed session) to find the first session in roadmap order that has
-neither. Propose that one as the default and ask the user to confirm — don't just
+the teaching-doc series (see "Where the teaching docs live" above — one page per
+completed session) and `git log` (one "Add <ID>: ..." commit per completed session) to
+find the first session in roadmap order that has neither. Propose that one as the
+default and ask the user to confirm — don't just
 start on it, since sessions like A1-pest/A1-custom/A17/B10 are explicitly optional
 side branches the user may want to skip.
 
@@ -31,10 +43,11 @@ compiler/tooling learning goals, and the deliverable. The deliverable is the act
 spec for "done" — plan and implement against it directly.
 
 Check every session listed under **Prereqs** has actually landed, the same way step 0
-checks completion: a `calc-lang/docs/<id>-*.md` page and/or a `DECISIONS.md` entry
-and/or an "Add <ID>: ..." commit in `git log`. If a prereq is missing, stop and tell
-the user which one — don't build ahead of a dependency that isn't there, since later
-sessions' plans routinely assume earlier ones' types/traits/files exist.
+checks completion: a `<id>-*.md` page in the teaching-doc series and/or a
+`DECISIONS.md` entry and/or an "Add <ID>: ..." commit in `git log`. If a prereq is
+missing, stop and tell the user which one — don't build ahead of a dependency that
+isn't there, since later sessions' plans routinely assume earlier ones' types/traits/
+files exist.
 
 Then read the spec.md section(s) the entry cites. The roadmap tells you *what* to
 build; spec.md tells you *why* — cite the relevant section(s) in the plan and in code
@@ -95,14 +108,15 @@ state the choice, the reasoning, and what was deliberately deferred and why.
 
 ## 6. Write the session's teaching-doc page
 
-Every session's deliverable includes a page in `calc-lang/docs/` (spec.md §12) — this
+Every session's deliverable includes a page in the teaching-doc series (spec.md
+§12, and see "Where the teaching docs live" above for its current location) — this
 is not a follow-up task, it ships in the same commit as the code. Name it
-`calc-lang/docs/<id-lowercase>-<slug>.md` matching the existing `a0-...`/`a1-...`/
-`a2-...` files, use this session's own code as the running example (not toy snippets),
+`<id-lowercase>-<slug>.md` matching the existing `a0-...`/`a1-...`/`a2-...` files'
+convention, use this session's own code as the running example (not toy snippets),
 and cover what the roadmap's "Compiler/tooling you'll learn" bullet describes, aimed
-at a reader with no prior compiler background. Add a numbered entry for it to
-[calc-lang/docs/README.md](../../../calc-lang/docs/README.md)'s reading-order list,
-one line describing what the page covers, following the existing three entries.
+at a reader with no prior compiler background. Add a numbered entry for it to that
+directory's own `README.md` reading-order list, one line describing what the page
+covers, following the existing entries' style.
 
 ## 7. Verify
 
@@ -110,11 +124,96 @@ Run `cargo build && cargo test` from `calc-lang/`. Both must pass before this se
 counts as done — this is CLAUDE.md §4's only required check, and it's also what CI
 (agent-evals.yml) runs on every push, so a failure here is a failure there.
 
-## 8. Commit — only with the user's go-ahead
+## 8. Commit and push — only with the user's explicit go-ahead
 
-This skill does not commit on its own authority. Once the user has reviewed the diff
-(or has otherwise pre-authorized autonomous commits for this session), stage and
-commit together in one commit: the code changes, `plan.md`, any `DECISIONS.md`
-addition, and the new/updated `calc-lang/docs/` files. Follow the existing commit
-message style from `git log` — short imperative summary naming the session, e.g. "Add
-A2: typed AST and semantic actions".
+This skill does not commit or push on its own authority. Commit and push are two
+separate asks, each needing its own explicit confirmation — don't infer a push from
+"commit it" alone, and don't infer either from "looks good."
+
+Once the user has confirmed the commit (or has otherwise pre-authorized autonomous
+commits for this session), stage and commit together in one commit: the code changes,
+`plan.md`, any `DECISIONS.md` addition, and the new/updated teaching-doc files.
+Follow the existing commit message style from `git log` — short imperative summary
+naming the session, e.g. "Add A2: typed AST and semantic actions".
+
+Only push if the user separately and explicitly asks for that too. If they do, push,
+then move to step 9.
+
+## 9. Sync — or create — the "DSL-Generator Roadmap" Artifact — only after an explicit push
+
+This step runs only when both step 8 confirmations happened and the push actually
+went through — a commit that's still local isn't done in any sense a shared roadmap
+view should reflect. If the session wasn't pushed, skip this step entirely.
+
+The **DSL-Generator Roadmap** Artifact is a standalone HTML dashboard mirroring
+roadmap.md's session list with progress bars and per-session status pills; it doesn't
+read the repo live, so it only ever reflects reality if this step keeps it in sync.
+
+1. Find it with `Artifact` `list` (scope "mine") if you don't already have its URL
+   from a prior turn — titled "DSL-Generator Roadmap", favicon 🛠️.
+
+**If it already exists:**
+
+2. `Artifact` `read` it to get the current HTML — always edit the live version, never
+   guess at its structure from memory.
+3. Update it to reflect the session that was just pushed:
+   - Turn its row from a plain `<div class="row ...">` into
+     `<a class="row is-done" href="..." target="_blank" rel="noopener">`, linking to
+     the session's teaching-doc page on GitHub, and add a `<span
+     class="doc-icon">↗ docs</span>` at the end of its `row-desc`, matching how A0–A5's
+     rows already link out — set its pill to `pill done">Done`. Build the link from
+     the repo's actual remote (`git remote get-url origin`) and default branch rather
+     than hardcoding — currently
+     `https://github.com/syall/dslgen/blob/main/<doc-path>` — so this keeps working if
+     the repo is ever renamed or forked.
+   - Advance the `next` pill to whichever session immediately follows it in
+     roadmap.md's order, skipping the optional side branches (`A1-pest`, `A1-custom`,
+     `A17`) the same way the footer's counts already do; the session that had `next`
+     before becomes `done` (and gets linked per the bullet above), and whatever is now
+     next changes from `todo` to `next` — it stays a plain, unlinked row until *it*
+     has a doc page.
+   - Recompute the top `stat-band` count and percentage, and the relevant Part's
+     `part-count` and bar width — the denominator stays the 33-session required path,
+     matching the footer's existing framing of the optional branches as uncounted.
+   - If this session's Part doesn't yet have its `part-card` wrapped in an
+     `<a class="part-link" href="...">` pointing at that Part's own docs index, check
+     whether one now exists (e.g. Part A's card links to
+     `calc-lang/docs/README.md` because that index exists; Parts B/C stay plain
+     `<div class="part-card">` until each has its own index file to point to — don't
+     link a Part card to an index that doesn't exist yet).
+   - Update the `stat-next` line's session ID and description to match the new
+     "next" row.
+   - Update the footer's "Status is derived from git history (commits through
+     `<sha>`, ...)" to the new commit's short SHA and message, and adjust the
+     suggested-path sentence if the newly done session changes what "remains."
+4. `Artifact` `publish` with the same `url` so it updates in place rather than
+   creating a duplicate dashboard.
+
+**If `list` turns up nothing titled "DSL-Generator Roadmap":**
+
+2. Build it fresh from roadmap.md and the repo's actual state (`git log`, and which
+   sessions have a page in the teaching-doc series — see "Where the teaching docs
+   live" above) — don't invent completion status, derive it the same way step 0 does.
+   Follow the `Artifact` tool's own process for a new page (quickstart, then the
+   `artifact-design` skill) rather than skipping straight to HTML.
+3. Shape the dashboard the same way the existing one already proved out, so a
+   recreated dashboard looks and behaves like the one it's replacing rather than like
+   a fresh design: an eyebrow/title header naming roadmap.md and the AI-native SDLC
+   Build stage; a top stat band with the required-path count/percentage, a progress
+   bar, and a "Next up" pointer; three Part cards (A/B/C) each with their own
+   session-count and bar; a collapsible per-part session list where each row shows the
+   session ID, a one-line description, and a status pill (`done` / `next` / `todo` /
+   `opt` for the optional side branches); and a footer stating the git commit the
+   status was derived from and which sessions remain on the suggested minimum path
+   (roadmap.md's own "Suggested minimum path" section). Use theme-aware CSS custom
+   properties (light + `prefers-color-scheme: dark`) rather than hardcoded colors, per
+   `artifact-design`.
+   Also carry over the linking convention the existing dashboard settled on (see the
+   "already exists" branch above): every `done` row links out to its teaching-doc page
+   on GitHub with a "↗ docs" marker, and a Part card only becomes a link once that
+   Part actually has a docs index file to point to — as of now that's Part A only, via
+   `calc-lang/docs/README.md`. Don't link a `next`/`todo`/`opt` row or a Part without
+   an index; a link to a page that doesn't exist is worse than no link.
+4. `Artifact` `publish` it with title "DSL-Generator Roadmap" and a fitting favicon (the
+   existing one used 🛠️). Tell the user the new URL — it's needed for every future
+   sync, and there's no other record of it once published.
