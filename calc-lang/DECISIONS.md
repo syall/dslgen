@@ -96,3 +96,30 @@ ever appear in exactly one place (structured `If`'s merge point). It's also the 
 place this IR isn't strictly SSA — `dst` has two static definition sites — which
 matches spec.md §8.1's "roughly SSA-ish" phrasing rather than a strict-SSA
 guarantee.
+
+## A5 — `Temp`-indexed store instead of a name-keyed environment
+
+roadmap.md's session template describes the interpreter's environment as
+`HashMap<String, Value>`, but `calc_ir::interp` uses a `Vec<Option<Value>>` indexed
+by `Temp.0` instead, with no variable names involved at all. This isn't a simplification
+made for its own sake — by the time IR reaches the interpreter, source-level names no
+longer exist in the data: `calc_syntax::resolve()` (A3) already rejected duplicate/
+unresolved names over the AST, and `ast_to_ir::lower()` (A4) already rewrote every
+`Var(name)` into a direct `Temp` reference during lowering, using its own
+lowering-time-only `HashMap<String, Temp>` that never reaches the IR. A `Vec` is safe
+here specifically because `lower()`'s `next_temp` counter is threaded through the
+*entire* recursive lowering, including into both arms of every `If` — so every `Temp`
+in a program is globally unique and densely numbered from 0, and (per A4's "roughly
+SSA-ish" entry above) always written before it's read. `TempStore::read` panics on a
+read of an unwritten slot rather than silently defaulting, catching a malformed-IR bug
+the same way `ast_to_ir::lookup` already panics on an unresolved identifier, instead of
+returning a wrong answer.
+
+## A5 — Nonzero-is-truthy for `if`'s numeric condition
+
+calc-lang has no boolean type — the grammar's `if <cond> { ... } else { ... }` accepts
+any numeric expression as `<cond>` — so the interpreter defines truthiness as "nonzero
+is true, zero is false," mirroring C's convention, since there is nothing else in the
+AST or spec to check a condition against. This is purely an interpreter-level runtime
+semantics decision; it doesn't require or imply adding a boolean type anywhere
+upstream.

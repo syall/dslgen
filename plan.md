@@ -1,41 +1,52 @@
-# Session A4 — Mid-level IR and the lowering pass
+# Session A5 — Tree-walking interpreter (debug backend)
 
-Spec refs: spec.md §8.1. Roadmap: roadmap.md "A4".
+Spec refs: spec.md §9.1. Roadmap: roadmap.md "A5".
 
 ## Plan
 
-1. Add `crates/calc-ir/src/ir.rs`: the mid-level IR types — `Temp` (a
-   three-address-code temporary, doc-commented since the term isn't self-evident),
-   `Instr` (`Const`/`BinOp`/`Copy`/`If`, reusing `calc_syntax::BinOp` as-is), `Block`
-   (`Vec<Instr>`, straight-line, no internal branches), and `Program { body, result
-   }`. `If` nests two `Block`s directly (structured control flow) rather than using
-   jump-connected basic blocks.
-2. Add `crates/calc-ir/src/ast_to_ir.rs`: `lower(expr: &Expr) -> Program`, a
-   recursive `lower_expr` mirroring `resolve.rs`'s scope-stack walk
-   (`Vec<HashMap<String, Temp>>`, pushed/popped per `Expr::Block`). Variables reuse
-   the temp their binding computed into (no load/store instructions needed, since
-   A3's `resolve` already guarantees bind-before-use). `If` lowers each branch into
-   its own instruction sequence, ending each with an `Instr::Copy` into one shared
-   `dst` temp ("phi via copies", since a structured `If` has no natural point for an
-   SSA `Phi` node). Assumes its input already passed `calc_syntax::resolve()`; an
-   unresolved lookup panics rather than returning a `Result` (lowering isn't a
-   validation boundary).
-3. Wire `calc-ir`'s `Cargo.toml` to depend on `calc-syntax` (path dependency); update
-   `lib.rs` to `pub mod ir; pub mod ast_to_ir;` plus re-exports.
-4. Test in `ast_to_ir.rs`: lower `"{ let x = 1; if x { x + 1 } else { 2 } }"` (parsed
-   via `LalrpopFrontend`) and assert the resulting `Program` equals a literal
-   expected IR value, checking every instruction and temp number.
-5. Log two choices in `DECISIONS.md`: deferring `Loop`/`Break`/`Continue`/`Return`
-   IR variants (spec.md §8.1 lists them, but `calc-lang`'s AST has no construct to
-   lower from yet — same reasoning as A2's `Stmt` deferral) and the "phi via copies"
-   technique for `If`'s branch merge.
-6. Write `calc-lang/docs/a4-mid-level-ir-and-lowering.md` (why compilers use a
-   mid-level IR, three-address code, structured control-flow nodes vs. basic-block
-   jumps, the "phi via copies" merge, a worked trace of the test program) and add it
-   to `docs/README.md`'s index.
+1. `crates/calc-ir/src/interp.rs` (new module, re-exported from `calc-ir/src/lib.rs`
+   alongside `ast_to_ir`/`ir`):
+   - `pub enum Value { Number(f64) }` — single-variant today (calc-lang has exactly
+     one runtime type), but an enum because the roadmap's Rust-learning goal for this
+     session is explicitly "enum-based runtime values," and unlike A2's deferred
+     `Stmt`, this type is exercised by every instruction, not unused scaffolding.
+   - A `Temp`-indexed store (`Vec<Option<Value>>`, grown on write) instead of a
+     name-keyed `HashMap`, since `ast_to_ir::lower`'s `next_temp` counter makes every
+     `Temp` in a program globally unique and densely numbered, and every temp is
+     written before it's read (the "roughly SSA-ish" property from A4).
+   - `pub fn interpret(program: &Program) -> Value`, with recursive `exec_block`/
+     `exec_instr`: `Const` writes a literal; `BinOp` applies `calc_syntax::BinOp` via
+     `f64` arithmetic; `Copy` propagates a value; `If` reads `cond`, treats nonzero as
+     true, and recurses into whichever nested `Block` is selected.
+   - Unit tests: the same `{ let x = 1; if x { x + 1 } else { 2 } }` program A4's
+     `ast_to_ir` test already lowers, a zero-condition `if` (falsiness), and plain
+     arithmetic precedence (`2 + 3 * 4`).
+
+2. `crates/calc-compiler/src/main.rs` (was a stub print): hand-rolled `env::args()`
+   parsing for `calcc run --interpret <path>` (no `clap` yet — that's A13's job).
+   Reads the file, runs `LalrpopFrontend::parse` → `calc_syntax::resolve` →
+   `calc_ir::lower` → `calc_ir::interpret`, printing diagnostics/errors to stderr and
+   returning `ExitCode::FAILURE` on failure at any stage, or the result number on
+   success.
+
+3. `DECISIONS.md`: new A5 entries for (a) the `Temp`-indexed `Vec` store instead of a
+   name-keyed `HashMap`, and (b) nonzero-is-truthy semantics for `if`.
+
+4. `calc-lang/docs/a5-tree-walking-interpreter.md` (new teaching-doc page) + a new
+   line in `calc-lang/docs/README.md`'s reading-order list.
 
 ## Outcome
 
-Implemented as planned; no departures. `cargo build && cargo test` from `calc-lang/`
-passes: 1 new test in `calc-ir` (`ast_to_ir::tests::lowers_a_let_bound_if_expression`)
-plus all 9 existing `calc-syntax` tests (A1–A3) unaffected.
+Implemented as planned, with one small departure: the store is `Vec<Option<Value>>`
+rather than a plain `Vec<Value>` with a default fill value, so that reading an
+unwritten `Temp` panics with a clear "malformed IR" message instead of silently
+returning a wrong number — matching how `ast_to_ir::lookup` already panics on an
+unresolved identifier rather than returning a bogus value.
+
+`cargo build && cargo test` from `calc-lang/`: all 14 tests pass (5 new in
+`calc_ir::interp` — including a dedicated nonzero-condition/then-branch case added
+alongside the zero-condition one, so both sides of `If`'s branch are covered by their
+own test — all prior tests unaffected). Manually verified `calcc run --interpret`
+end-to-end against a sample program (`{ let x = 3; if x { x * 2 + 1 } else { 0 } }` →
+`7`, exit 0) and a bad program (`y + 1` → resolve error on stderr, exit 1) and bad CLI
+usage (usage line on stderr, exit 1).

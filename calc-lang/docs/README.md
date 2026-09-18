@@ -25,5 +25,11 @@ Read in order:
    the AST; three-address code, structured control-flow nodes vs. jump-based basic
    blocks, and how `calc-ir::ast_to_ir::lower` turns an `if`-expression's two branches
    into one value ("phi via copies").
+6. [a5-tree-walking-interpreter.md](a5-tree-walking-interpreter.md) — how a
+   tree-walking interpreter evaluates the IR directly (and why it's useful as a
+   semantics oracle for later codegen backends); why the interpreter's environment is
+   a dense `Temp`-indexed array rather than a name-keyed map, since variable names are
+   already gone by the time IR exists; and how `if`'s truthiness is defined with no
+   boolean type in the language.
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.
