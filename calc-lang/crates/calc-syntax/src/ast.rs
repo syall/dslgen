@@ -2,10 +2,10 @@
 //! so the AST is statically typed"). This replaces A1's throwaway `RawAst` now that
 //! there's a firmer sense of what semantic actions and later lowering need from it.
 //!
-//! `Stmt` isn't here yet: calc-lang has no construct that isn't itself an
-//! expression-with-a-value (see A1's doc: `if`/`else` evaluates like Rust's own `if`
-//! expression), so there's nothing for a statement type to represent until A3 adds a
-//! binding/declaration form. See `DECISIONS.md`'s A2 entry.
+//! `Stmt` arrives in A3, alongside `Expr::Block`: calc-lang's first non-expression
+//! construct, a `let` declaration that only makes sense inside a block's statement
+//! list (see `DECISIONS.md`'s A3 entry for why block-scoped statements were chosen
+//! over an ML-style `let ... in ...` expression).
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -17,6 +17,10 @@ pub enum Expr {
         then_branch: Box<Expr>,
         else_branch: Box<Expr>,
     },
+    Block {
+        stmts: Vec<Stmt>,
+        result: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,4 +29,9 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Let { name: String, value: Expr },
 }

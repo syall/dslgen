@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr};
+use crate::ast::{BinOp, Expr, Stmt};
 
 grammar;
 
@@ -17,9 +17,18 @@ Factor: Expr = {
 Term: Expr = {
     Num => Expr::Number(<>),
     Ident => Expr::Var(<>),
-    "if" <c:Expr> "{" <t:Expr> "}" "else" "{" <e:Expr> "}" =>
+    "if" <c:Expr> <t:Block> "else" <e:Block> =>
         Expr::If { cond: Box::new(c), then_branch: Box::new(t), else_branch: Box::new(e) },
     "(" <Expr> ")",
+    Block,
+};
+
+Block: Expr = {
+    "{" <stmts:Stmt*> <result:Expr> "}" => Expr::Block { stmts, result: Box::new(result) },
+};
+
+Stmt: Stmt = {
+    "let" <name:Ident> "=" <value:Expr> ";" => Stmt::Let { name, value },
 };
 
 Num: f64 = r"[0-9]+(\.[0-9]+)?" => <>.parse().unwrap();

@@ -21,11 +21,13 @@ impl ParserFrontend for LalrpopFrontend {
     fn role_model(&self) -> RoleModel {
         RoleModel {
             identifiers: vec!["Ident".to_string()],
-            keywords: vec!["if".to_string(), "else".to_string()],
+            keywords: vec!["if".to_string(), "else".to_string(), "let".to_string()],
             control_flow: vec![ControlFlowRole {
                 kind: "if".to_string(),
                 rule: "Term".to_string(),
             }],
+            scopes: vec!["Block".to_string()],
+            bindings: vec!["Stmt".to_string()],
             ..Default::default()
         }
     }
@@ -49,7 +51,7 @@ fn convert_error<T: std::fmt::Debug>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::BinOp;
+    use crate::ast::{BinOp, Stmt};
 
     /// Throwaway: exercises `parse()` only through the `ParserFrontend` trait, never
     /// the LALRPOP-generated `calc::ExprParser` type directly, so later sessions can
@@ -67,20 +69,26 @@ mod tests {
                 BinOp::Sub,
                 Box::new(Expr::Number(1.0)),
             )),
-            then_branch: Box::new(Expr::BinOp(
-                Box::new(Expr::Number(2.0)),
-                BinOp::Add,
-                Box::new(Expr::BinOp(
-                    Box::new(Expr::Number(3.0)),
-                    BinOp::Mul,
-                    Box::new(Expr::Number(4.0)),
+            then_branch: Box::new(Expr::Block {
+                stmts: vec![],
+                result: Box::new(Expr::BinOp(
+                    Box::new(Expr::Number(2.0)),
+                    BinOp::Add,
+                    Box::new(Expr::BinOp(
+                        Box::new(Expr::Number(3.0)),
+                        BinOp::Mul,
+                        Box::new(Expr::Number(4.0)),
+                    )),
                 )),
-            )),
-            else_branch: Box::new(Expr::BinOp(
-                Box::new(Expr::Var("y".to_string())),
-                BinOp::Div,
-                Box::new(Expr::Number(2.0)),
-            )),
+            }),
+            else_branch: Box::new(Expr::Block {
+                stmts: vec![],
+                result: Box::new(Expr::BinOp(
+                    Box::new(Expr::Var("y".to_string())),
+                    BinOp::Div,
+                    Box::new(Expr::Number(2.0)),
+                )),
+            }),
         };
         assert_eq!(ast, expected);
     }
@@ -98,11 +106,17 @@ mod tests {
         let roles = frontend.role_model();
         assert!(roles.keywords.contains(&"if".to_string()));
         assert!(roles.keywords.contains(&"else".to_string()));
+        assert!(roles.keywords.contains(&"let".to_string()));
         assert_eq!(roles.control_flow.len(), 1);
+        assert!(roles.scopes.contains(&"Block".to_string()));
+        assert!(roles.bindings.contains(&"Stmt".to_string()));
     }
 
     /// The roadmap's named A2 test case: a minimal `if`/`else` parses into the exact
-    /// typed `Expr` shape, not just "parses without error".
+    /// typed `Expr` shape, not just "parses without error". `then`/`else` branches
+    /// are `Expr::Block`s with an empty `stmts` list now that A3 gives `{ ... }` real
+    /// block syntax — this is the regression check that the grammar change is a
+    /// strict superset of A2's.
     #[test]
     fn parses_if_else_into_typed_ast_shape() {
         let frontend = LalrpopFrontend;
@@ -112,8 +126,39 @@ mod tests {
             ast,
             Expr::If {
                 cond: Box::new(Expr::Var("x".to_string())),
-                then_branch: Box::new(Expr::Number(1.0)),
-                else_branch: Box::new(Expr::Number(2.0)),
+                then_branch: Box::new(Expr::Block {
+                    stmts: vec![],
+                    result: Box::new(Expr::Number(1.0)),
+                }),
+                else_branch: Box::new(Expr::Block {
+                    stmts: vec![],
+                    result: Box::new(Expr::Number(2.0)),
+                }),
+            }
+        );
+    }
+
+    /// A3's new construct: a block of `let` statements followed by a result
+    /// expression, all sharing one scope.
+    #[test]
+    fn parses_a_block_with_let_statements_into_typed_ast_shape() {
+        let frontend = LalrpopFrontend;
+        let ast = frontend
+            .parse("{ let x = 1; x + 2 }")
+            .expect("should parse");
+
+        assert_eq!(
+            ast,
+            Expr::Block {
+                stmts: vec![Stmt::Let {
+                    name: "x".to_string(),
+                    value: Expr::Number(1.0),
+                }],
+                result: Box::new(Expr::BinOp(
+                    Box::new(Expr::Var("x".to_string())),
+                    BinOp::Add,
+                    Box::new(Expr::Number(2.0)),
+                )),
             }
         );
     }

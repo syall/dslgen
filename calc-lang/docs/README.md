@@ -16,5 +16,9 @@ Read in order:
 3. [a2-typed-ast-and-semantic-actions.md](a2-typed-ast-and-semantic-actions.md) — what
    an AST is and why it's typed per-rule, and how a grammar's semantic actions build
    one; also covers why `calc-lang` doesn't have a `Stmt` type yet.
+4. [a3-scopes-bindings-and-resolution.md](a3-scopes-bindings-and-resolution.md) — what
+   scopes, bindings, and a symbol table are; `calc-lang`'s first binding construct
+   (`Stmt::Let` inside `Expr::Block`) and the hand-written `resolve` pass that checks
+   names against nested lexical scopes.
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

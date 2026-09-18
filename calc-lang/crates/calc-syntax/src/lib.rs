@@ -3,6 +3,8 @@
 pub mod ast;
 pub mod frontend;
 pub mod lalrpop_frontend;
+pub mod resolve;
 
-pub use ast::{BinOp, Expr};
+pub use ast::{BinOp, Expr, Stmt};
 pub use frontend::{ControlFlowRole, ParseDiagnostic, ParserFrontend, RoleModel};
+pub use resolve::{resolve, ResolveError};
