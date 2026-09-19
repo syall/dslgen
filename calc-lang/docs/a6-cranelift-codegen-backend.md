@@ -2,6 +2,7 @@
 
 **Session code**:
 [`crates/calc-compiler/src/cranelift_backend.rs`](../crates/calc-compiler/src/cranelift_backend.rs),
+[`crates/calc-compiler/tests/cranelift_recipes.rs`](../crates/calc-compiler/tests/cranelift_recipes.rs),
 [`crates/calc-compiler/src/link_stub.rs`](../crates/calc-compiler/src/link_stub.rs),
 [`crates/calc-compiler/src/main.rs`](../crates/calc-compiler/src/main.rs).
 **Spec refs**: spec.md §8.1 (pluggable codegen backends). **Prereqs**:
@@ -86,152 +87,275 @@ let result = match op {
 `calc-lang` has exactly one runtime type (`f64`), so every Cranelift value in this
 backend is typed `types::F64`.
 
-### Crash course: every Cranelift call in this file
+## Building real units: recipes
 
-Rather than introduce these one at a time as they come up, here's every Cranelift
-call `cranelift_backend.rs` actually makes, grouped by what it's for and mapped to
-what it means for *this* program specifically — a reference to come back to while
-reading the rest of this page.
+Cranelift's calls only make sense in a fixed order, and every larger unit (a
+block, an `if`, a function, a whole object file) is that order repeated. So this
+section teaches by building: four recipes, each a complete unit, then the few
+remaining calls none of them use. The first three are built as tests in
+`tests/cranelift_recipes.rs` (with `unwrap` where the snippets show `?`), so they
+can't drift from working code. The IR shown is what Cranelift prints for each one
+(`ctx.func.display()`); `windows_fastcall` is this machine's calling convention
+and will read differently on yours.
 
-> **Picking a target and starting a module**
->
-> - **`cranelift_native::builder()`** — "give me a builder configured for whatever
->   CPU is running this code right now." No hardcoded target triple: `calcc`
->   compiles for its own machine.
-> - **`settings::builder()` / `.set("is_pic", "false")`** (the `Configurable`
->   trait) — a mutable bag of codegen flags. Used once, to explicitly turn off
->   position-independent-code generation rather than silently inherit whatever
->   the default happens to be.
-> - **`settings::Flags::new(flag_builder)`** — freezes that bag of flags into an
->   immutable set, ready to hand to the ISA builder.
-> - **`isa_builder.finish(flags)`** — combines "which CPU" with "which flags" into
->   one concrete `TargetIsa`: the object that actually knows how to turn Cranelift
->   IR into real machine instructions for this target.
-> - **`ObjectBuilder::new(isa, name, default_libcall_names())`** — configures "emit
->   a native object file for this ISA." `default_libcall_names()` supplies the
->   standard symbol names Cranelift would use for any runtime helper calls it
->   might need to insert on its own (not used by this backend's simple f64 ops,
->   but required to construct the builder regardless).
-> - **`ObjectModule::new(object_builder)`** — the container everything gets built
->   into. Both `calc_main` and `main` are declared and defined into this one
->   `module`, and it's what eventually becomes the returned object-file bytes.
-> - **`module.isa()`** — "what target was this module built for?" — used to fetch
->   a correct default calling convention for every function signature, instead of
->   hardcoding one that would silently be wrong on some other platform (an actual
->   bug caught while building this session — see `DECISIONS.md`).
-> - **`module.finish()` then `product.object.write()`** — `finish()` closes the
->   module out into an `ObjectProduct`; `.object.write()` (from the underlying
->   `object` crate) serializes that into real COFF/ELF/Mach-O bytes — the
->   `Vec<u8>` `compile_to_object` hands back.
->
-> **Declaring a function's shape, and giving it a body**
->
-> - **`Signature::new(call_conv)`** — the start of a function's "shape": which
->   calling convention it uses, with no parameters or return values yet.
-> - **`AbiParam::new(ty)`** — describes one value crossing the ABI boundary; every
->   signature here has exactly one — `calc_main`'s `f64` return, or `main`'s `i32`
->   return.
-> - **`module.declare_function(name, linkage, sig)`** — registers a named,
->   exported symbol slot and hands back a `FuncId` — this is what makes `calc_main`
->   and `main` real, linkable symbols in the eventual object file.
-> - **`Context::new()`** — a fresh per-function scratch space holding the actual
->   `Function` (`ctx.func`) that gets built up.
-> - **`FunctionBuilderContext::new()`** — a separate, reusable chunk of state the
->   `FunctionBuilder` needs for its own SSA-construction bookkeeping, kept apart
->   from `Context` precisely so it *can* be reused across functions.
-> - **`FunctionBuilder::new(&mut ctx.func, &mut builder_ctx)`** — the tool that
->   actually builds a function body, instruction by instruction. Nearly every call
->   below is a method on this `builder`.
-> - **`module.define_function(func_id, &mut ctx)`** — takes the finished,
->   built `Context` and attaches it to the `FuncId` declared earlier. This is the
->   step that gives a previously-empty symbol a real body.
-> - **`module.declare_func_in_func(calc_main_id, builder.func)`** — imports
->   *another* function's `FuncId` (here, `calc_main`'s) into the function currently
->   being built (`main`), producing a local `FuncRef` that `.ins().call()` can
->   target. This is specifically how `main` gets permission to call `calc_main`.
->
-> **Blocks: switching, jumping, and sealing**
->
-> - **`builder.create_block()`** — allocates a new, empty basic block with nothing
->   in it yet. Called once per function for the entry block, and three times per
->   `If` (`then`, `else`, `merge`).
-> - **`builder.switch_to_block(block)`** — moves the builder's "current insertion
->   point." Every `.ins()` call after this appends to whichever block was last
->   switched to — so lowering `If` calls `switch_to_block(then_blk)`, emits the
->   `then` branch's instructions, then `switch_to_block(else_blk)` and does the
->   same for `else`, then `switch_to_block(merge_blk)` for whatever comes after
->   the `If`. It's purely a "where do new instructions go" cursor — it doesn't by
->   itself create any control flow.
-> - **`.ins().jump(target_block, [])`** — the instruction that actually *creates*
->   control flow: "unconditionally continue execution at `target_block`." Both
->   `then_blk` and `else_blk` end with a `jump(merge_blk, [])` — this is the literal
->   machine-level equivalent of the two branches of an `if`/`else` "meeting back
->   up" afterward.
-> - **`.ins().brif(cond, then_blk, [], else_blk, [])`** — the two-way version of
->   `jump`: "go to `then_blk` if `cond` is true, otherwise go to `else_blk`." This
->   is the actual branch `Instr::If`'s condition compiles down to.
-> - **`builder.seal_block(block)`** — a promise: "every branch that will ever
->   target this block has now been emitted; no more will show up later." This
->   matters because of how `use_var` (below) works — Cranelift can only resolve
->   what value a `Variable` holds at the *start* of a block once it knows every
->   block that might jump into it, so it can check what each of them last wrote.
->   `then_blk`/`else_blk` can be sealed immediately after creation (each has
->   exactly one predecessor: the `brif` above, already emitted); `merge_blk` can
->   only be sealed *after* both branches have emitted their `jump` into it, since
->   only then are all of its predecessors actually known. Sealing too early, before
->   a predecessor exists, is exactly the bug this ordering avoids.
->
-> **Variables: the phi-avoidance trick**
->
-> - **`builder.declare_var(ty)`** — mints one new `Variable` of a given type.
->   Called once per `calc_ir::Temp` the program ever uses (see `collect_temps`) —
->   every IR temporary gets its own Cranelift `Variable`.
-> - **`builder.def_var(var, value)`** — "as of this point in this block, `var`
->   holds `value`." Maps to every IR instruction's *write*: `Const`, `BinOp`, and
->   `Copy` all end by `def_var`-ing their `dst` temp.
-> - **`builder.use_var(var)`** — "give me `var`'s current value here." Maps to
->   every IR instruction's *read*: `BinOp`'s `lhs`/`rhs`, `If`'s `cond`, `Copy`'s
->   `src`. This is the one call doing the real phi-avoidance work: read from a
->   block with two sealed predecessors that each wrote something different, and
->   Cranelift's own SSA-construction algorithm resolves the correct value (a real
->   `phi`, if one is actually needed) without this backend's code ever asking for
->   one explicitly. The next section walks through exactly why that's the piece
->   that makes hand-written `phi` nodes unnecessary.
->
-> **`ins()` and the instructions it inserts**
->
-> - **`builder.ins()`** — not an instruction itself, and doesn't return a value on
->   its own — it's a handle onto "insert the next instruction at the builder's
->   current position" (wherever the last `switch_to_block` pointed). Every
->   instruction-emitting call in this file is a method chained directly off it,
->   e.g. `builder.ins().fadd(a, b)`.
-> - **`.ins().f64const(value)`** — emits a floating-point constant. Maps to
->   `Instr::Const`.
-> - **`.ins().fadd/.fsub/.fmul/.fdiv(lhs, rhs)`** — floating-point arithmetic.
->   Maps to `Instr::BinOp`, one call per `calc_ir::BinOp` variant.
-> - **`.ins().fcmp(FloatCC::NotEqual, cond, zero)`** — a floating-point comparison
->   producing a boolean value. Maps to `Instr::If`'s "is the condition truthy"
->   check (nonzero-is-true, matching the interpreter exactly — see A5's docs).
-> - **`.ins().call(func_ref, args)`** — calls another function. The only call in
->   this whole backend: `main` calling `calc_main`.
-> - **`builder.inst_results(call)[0]`** — a call is itself just one instruction, so
->   its return value isn't handed back directly the way `fadd` etc.'s is — this
->   pulls the actual result value back out of the `call` instruction just emitted.
-> - **`.ins().fcvt_to_sint_sat(types::I32, value)`** — a *saturating*
->   floating-point-to-integer conversion. Maps to turning `calc_main`'s `f64`
->   answer into the `i32` exit code `main` returns, without undefined behavior on
->   an out-of-range value.
-> - **`.ins().return_(values)`** — ends the function, handing back the given
->   values. Maps to `calc_main`'s final result, or `main`'s exit code.
-> - **`builder.finalize(module.isa().frontend_config())`** — the last call on a
->   given `builder`: finishes SSA construction for good, checks the function is
->   well-formed, and releases the borrow on `ctx.func` so `ctx` can be handed to
->   `module.define_function`.
+**Two fixed orders cover everything.**
+
+*Building a block* is always this sequence:
+
+1. `create_block()` — allocates an empty block. Do it any time before you need to
+   name the block (a `brif` or `jump` must name its targets before they're filled).
+2. `switch_to_block(b)` — moves the builder's insertion cursor to `b`. It only
+   says *where new instructions go*; it creates no control flow by itself.
+3. `.ins().something(..)` — emit instructions. `ins()` isn't an instruction and
+   returns no value: it's a handle meaning "insert at the cursor", and every
+   instruction-emitting call (`fadd`, `brif`, `return_`, ...) hangs off it.
+4. **One terminator**: `jump`, `brif` or `return_`. `jump` is what actually
+   *creates* control flow ("continue at that block"); `brif` is its two-way
+   version. Nothing may follow a terminator in the same block.
+5. `seal_block(b)` — a promise that every jump *into* `b` has now been emitted.
+   Cranelift can only work out what value a `Variable` holds at the start of a
+   block once it knows every block that might jump in, so a block with a single
+   predecessor can be sealed right away, while a merge point can only be sealed
+   after all its incoming jumps exist.
+
+*Building a function* is always this sequence:
+
+1. a module: `new_object_module()` (Recipe 4 opens it up)
+2. a `Signature`: the calling convention, then `params`/`returns` of `AbiParam`s
+3. `module.declare_function(name, linkage, &sig)` → a `FuncId`. *Declaring* only
+   reserves the name and shape, so other functions can call it before it has a body.
+4. a `Context` (holds the `Function` being built; put the signature in
+   `ctx.func.signature`), a `FunctionBuilderContext` (the builder's own scratch
+   space, separate so it can be reused across functions), and
+   `FunctionBuilder::new(&mut ctx.func, &mut ..)`
+5. the entry block: `create_block`, `append_block_params_for_function_params`,
+   `switch_to_block`, `seal_block` (nothing jumps into the entry, so seal at once)
+6. the body: more blocks, each following the block sequence above
+7. `finalize(..)` — ends the builder: finishes SSA construction and releases the
+   borrow on `ctx.func`. It takes the target's `frontend_config()`.
+8. `module.define_function(func_id, &mut ctx)` — attaches the finished body to the
+   declared `FuncId` and runs Cranelift's verifier
+
+**Recipe 1: a function that takes a parameter.** Parameters arrive as the entry
+block's parameters, read with `block_params`, not through a call:
+
+```rust
+let mut sig = Signature::new(module.isa().default_call_conv());
+sig.params.push(AbiParam::new(types::F64));
+sig.returns.push(AbiParam::new(types::F64));
+let id = module.declare_function("twice", Linkage::Export, &sig)?;
+
+let mut ctx = Context::new();
+ctx.func.signature = sig;
+let mut fb_ctx = FunctionBuilderContext::new();
+let mut b = FunctionBuilder::new(&mut ctx.func, &mut fb_ctx);
+
+let entry = b.create_block();
+b.append_block_params_for_function_params(entry); // x becomes block0's parameter
+b.switch_to_block(entry);
+b.seal_block(entry);
+
+let x = b.block_params(entry)[0];
+let doubled = b.ins().fadd(x, x);
+b.ins().return_(&[doubled]);                      // the terminator
+
+b.finalize(module.isa().frontend_config());
+module.define_function(id, &mut ctx)?;
+```
+
+```
+function u0:0(f64) -> f64 windows_fastcall {
+block0(v0: f64):
+    v1 = fadd v0, v0
+    return v1
+}
+```
+
+Every Rust line above has exactly one visible effect: the signature is the
+header line, the entry block and its parameter are `block0(v0: f64):`, `fadd` and
+`return_` are the two instructions. `define_calc_main` is this same recipe with
+no parameters and a body produced by `lower_block`.
+
+**Recipe 2: an `if`/`else` that produces a value.** This is `Instr::If` on its
+own, with a parameter as the condition so Cranelift can't fold it away. Apart
+from the signature (three `f64` parameters) only the body differs from Recipe 1;
+steps 1–5 and 7–8 are the same:
+
+```rust
+let (c, x, y) = { let p = b.block_params(entry); (p[0], p[1], p[2]) };
+
+let result = b.declare_var(types::F64);           // one Variable for the merged value
+let zero = b.ins().f64const(0.0);
+let truthy = b.ins().fcmp(FloatCC::NotEqual, c, zero);
+
+let then_blk = b.create_block();                  // create all three up front,
+let else_blk = b.create_block();                  // because brif and both jumps
+let merge_blk = b.create_block();                 // name them before they're filled
+b.ins().brif(truthy, then_blk, &[], else_blk, &[]);
+
+b.switch_to_block(then_blk);                      // one predecessor (the brif): seal now
+b.seal_block(then_blk);
+b.def_var(result, x);
+b.ins().jump(merge_blk, &[]);
+
+b.switch_to_block(else_blk);
+b.seal_block(else_blk);
+b.def_var(result, y);
+b.ins().jump(merge_blk, &[]);
+
+b.switch_to_block(merge_blk);                     // both jumps exist: now seal
+b.seal_block(merge_blk);
+let r = b.use_var(result);
+b.ins().return_(&[r]);
+```
+
+```
+function u0:0(f64, f64, f64) -> f64 windows_fastcall {
+block0(v0: f64, v1: f64, v2: f64):
+    v3 = f64const 0.0
+    v4 = fcmp ne v0, v3  ; v3 = 0.0
+    brif v4, block1, block2
+
+block1:
+    jump block3(v1)
+
+block2:
+    jump block3(v2)
+
+block3(v5: f64):
+    return v5
+}
+```
+
+Read it against the code: `brif` is the `brif`; each `def_var` + `jump` pair
+became `jump block3(vN)`, passing that branch's value; and `use_var` in the merge
+block became the parameter `block3(v5: f64)`. **That parameter is the `phi`.**
+You never wrote it; sealing `merge_blk` after both jumps existed is what let
+Cranelift work out it was needed. Written by hand, it would be
+`let merged = b.append_block_param(merge_blk, types::F64);` plus
+`jump(merge_blk, &[x])` / `jump(merge_blk, &[y])`, and reading `merged` instead of
+calling `use_var`. This backend uses `Variable` so `Instr::Copy` needs no
+special handling.
+
+**Recipe 3: one function calling another.** Declare both functions first, then
+define them; inside the caller, turn the callee's `FuncId` into a local `FuncRef`
+and `call` it:
+
+```rust
+let callee_ref = module.declare_func_in_func(callee, b.func);
+let call = b.ins().call(callee_ref, &[]);
+let result = b.inst_results(call)[0];     // a call's results are looked up separately
+b.ins().return_(&[result]);
+```
+
+```
+function u0:0() -> f64 windows_fastcall {
+    sig0 = () -> f64 windows_fastcall
+    fn0 = colocated u0:0 sig0
+
+block0:
+    v0 = call fn0()
+    return v0
+}
+```
+
+`fn0` is only this function's private name for the callee, which is why it
+doesn't equal the callee's own `u0:0`. `define_c_main` is exactly this, plus
+`fcvt_to_sint_sat` on the result.
+
+**Recipe 4: from a module to an object file.** Step 1 of the function order,
+`new_object_module()`, is where all the target-selection calls live. Opened up:
+
+```rust
+fn new_object_module() -> ObjectModule {
+    let isa_builder = cranelift_native::builder()?;            // "the CPU running this code"
+    let mut flags = settings::builder();                       // a mutable bag of codegen flags
+    flags.set("is_pic", "false")?;                             // no position-independent code
+    let isa = isa_builder.finish(settings::Flags::new(flags))?; // CPU + frozen flags = a TargetIsa
+    let object_builder =
+        ObjectBuilder::new(isa, "calc_main", default_libcall_names())?; // "emit an object file"
+    ObjectModule::new(object_builder)                          // the container functions go into
+}
+```
+
+The `TargetIsa` is the object that actually knows how to turn Cranelift IR into
+machine instructions for this CPU. `default_libcall_names()` names the runtime
+helper functions Cranelift might insert on its own (this backend's `f64` ops never
+need one, but the builder requires the argument). No target triple is written
+anywhere, so `calcc` compiles for the machine it runs on.
+
+From then on the module answers questions about its target, and you should ask it
+rather than assume: `module.isa().default_call_conv()` for every `Signature` (an
+early draft here hardcoded the System V convention, which is wrong on Windows) and
+`module.isa().frontend_config()` for every `finalize`.
+
+Then the whole of `compile_to_object` is: make the module, *declare, build,
+define* each function, then `finish`:
+
+```rust
+let mut module = new_object_module();
+let calc_main_id = declare_calc_main(&mut module);       // declare, so others can call it
+define_calc_main(&mut module, calc_main_id, program);    // build + define (Recipes 1 + 2)
+let main_id = declare_c_main(&mut module);
+define_c_main(&mut module, main_id, calc_main_id);       // build + define (Recipe 3)
+module.finish().object.write()   // finish() closes the module; write() serializes it
+                                 // to real COFF/ELF/Mach-O bytes: the .o/.obj file
+```
+
+**Other calls this backend makes.** The recipes cover the structure; these are the
+remaining individual calls, each used in `cranelift_backend.rs`:
+
+| Call | What it does here |
+| --- | --- |
+| `b.ins().f64const(v)` | Emits a constant; `calc-ir`'s `Instr::Const`. |
+| `b.ins().fadd/fsub/fmul/fdiv(l, r)` | Float arithmetic; one per `calc_ir::BinOp` (see the `match` in "Cranelift IR basics"). |
+| `b.ins().fcmp(FloatCC::NotEqual, cond, zero)` | A comparison producing a truth value for `brif` to branch on; how `If`'s "nonzero is true" is spelled. Its NaN behavior is covered in the `phi` section below. |
+| `b.ins().fcvt_to_sint_sat(types::I32, v)` | Float to integer with *saturating* conversion (always defined, even out of `i32`'s range). Used by `main` to turn `calc_main`'s `f64` answer into an exit code. |
+| `Linkage::Export` | Makes a declared function's symbol visible to the linker. `main` needs it so the C startup code can find it. |
+
+**What Cranelift enforces.** Each of these mistakes was made deliberately
+against this crate version (0.135.2) and the response recorded, so the messages
+below are verbatim:
+
+| Mistake | What happens |
+| --- | --- |
+| Block never ends in a terminator | panic at `finalize`: `FunctionBuilder finalized, but block block0 is not filled` |
+| Instruction after the terminator | panic: `you cannot add an instruction to a block already filled` |
+| `.ins()` before any `switch_to_block` | panic: `Please call switch_to_block before inserting instructions` |
+| `switch_to_block` away from an unfinished block | panic: `you have to fill your block before switching` |
+| Forgot `seal_block` | panic at `finalize`: `FunctionBuilder finalized, but block block0 is not sealed` |
+| Sealed a block, then jumped into it | panic: `assertion failed: !self.is_sealed(block)` |
+| Returned an `i32` from an `f64` function | `define_function` returns `Err`: `Compilation error: Verifier errors` |
+| `use_var` on a variable no path ever `def_var`'d | same verifier `Err` from `define_function` |
+
+The first six are the builder catching sequencing errors as you make them; the
+last two only surface when `define_function` verifies the finished function, which
+is why this backend's `.expect("... well-formed")` on it is the real safety net.
+
+**Extending to something new.** A construct calc-lang doesn't have yet, like
+`while`, is the same two orders with one twist, and that twist is *why* sealing
+exists: the loop's header block has a predecessor that doesn't exist yet (the
+jump back from the end of the body). Sketch:
+
+1. `create_block` for `header`, `body`, `exit`; `jump(header)` from where you are.
+2. `switch_to_block(header)`, but **don't seal it yet**. Emit the condition and
+   `brif(cond, body, &[], exit, &[])`.
+3. `switch_to_block(body)`, `seal_block(body)`, emit the body, then
+   `jump(header, &[])`. That back-edge is the last predecessor `header` will get.
+4. Now `seal_block(header)`. Then `switch_to_block(exit)` and `seal_block(exit)`.
+
+Any variable the body changes is picked up as a header block parameter by the
+same `def_var`/`use_var` mechanism as the `phi` above; nothing extra to write.
+(`calc-lang` has no loop construct, so this is a sketch, not code in this repo;
+see `DECISIONS.md`'s A4 entry on deferring `Loop`.)
 
 ## The trick that avoids hand-writing `phi` nodes
 
-`Instr::If` is the one place lowering isn't a straight instruction-for-instruction
-translation, because of what A4's own docs call "phi via copies": both of an
+Recipe 2 above built an `if`/`else` by hand from a function's parameters. This
+section is the same shape again, but driven by `calc-ir` instead of parameters,
+and it explains why the backend leans on `Variable` to do it. `Instr::If` is the
+one place lowering isn't a straight instruction-for-instruction translation,
+because of what A4's own docs call "phi via copies": both of an
 `If`'s branches write the *same* destination `Temp`, which is exactly the
 situation that needs an SSA **`phi` node** — "this value is `X` if control came
 from block A, or `Y` if it came from block B" — in a real SSA-based IR like
@@ -260,7 +384,8 @@ algorithm (from Braun, Buchwald, et al.'s paper on simple and efficient SSA
 construction) that inserts whatever `phi`s are actually needed the moment a
 variable is read in a block with multiple predecessors — but only once every
 predecessor block has been **sealed** (a promise that no more predecessors will
-ever be added). So lowering `Instr::If` looks like this:
+ever be added). So lowering `Instr::If` is Recipe 2's sequence, with
+`lower_block` filling each branch instead of a single `def_var`:
 
 ```rust
 let then_blk = builder.create_block();

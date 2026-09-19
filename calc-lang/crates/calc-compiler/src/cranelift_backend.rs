@@ -30,6 +30,21 @@ type VarMap = HashMap<Temp, Variable>;
 /// — see `DECISIONS.md`'s A6 entry for why an exit code stands in for real output
 /// before A9's built-ins (and A12's link driver) exist.
 pub fn compile_to_object(program: &Program) -> Vec<u8> {
+    let mut module = new_object_module();
+
+    let calc_main_id = declare_calc_main(&mut module);
+    define_calc_main(&mut module, calc_main_id, program);
+
+    let main_id = declare_c_main(&mut module);
+    define_c_main(&mut module, main_id, calc_main_id);
+
+    let product = module.finish();
+    product.object.write().expect("valid object file")
+}
+
+/// An empty `ObjectModule` targeting the host CPU — the fixed opening sequence of
+/// every compile (walked through in the docs' "Recipe 4").
+fn new_object_module() -> ObjectModule {
     let isa_builder =
         cranelift_native::builder().expect("host architecture is supported by cranelift-native");
     let mut flag_builder = settings::builder();
@@ -40,16 +55,7 @@ pub fn compile_to_object(program: &Program) -> Vec<u8> {
 
     let object_builder = ObjectBuilder::new(isa, "calc_main", default_libcall_names())
         .expect("object builder configuration is valid");
-    let mut module = ObjectModule::new(object_builder);
-
-    let calc_main_id = declare_calc_main(&mut module);
-    define_calc_main(&mut module, calc_main_id, program);
-
-    let main_id = declare_c_main(&mut module);
-    define_c_main(&mut module, main_id, calc_main_id);
-
-    let product = module.finish();
-    product.object.write().expect("valid object file")
+    ObjectModule::new(object_builder)
 }
 
 fn declare_calc_main(module: &mut ObjectModule) -> FuncId {
