@@ -1,0 +1,163 @@
+<svg viewBox="0 0 1560 800" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+    <style>
+      .box { fill: #f2f4f8; stroke: #4b5563; stroke-width: 1.5; }
+      .ifbox { fill: #e8eefc; stroke: #3b5bdb; stroke-width: 1.8; }
+      .nestbox { fill: #ffffff; stroke: #8891a0; stroke-width: 1.3; }
+      .text { fill: #1f2430; font-size: 12px; }
+      .label { fill: #1f2430; font-size: 12.5px; font-weight: 600; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .title { fill: #1f2430; font-size: 17px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; text-anchor: middle; }
+      .subtitle { fill: #4b5563; font-size: 13px; font-style: italic; text-anchor: middle; }
+      .caption { fill: #4b5563; font-size: 12.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .note { fill: #6b7684; font-size: 11px; font-style: italic; }
+      .edge { stroke: #4b5563; stroke-width: 1.6; fill: none; }
+      .edgelabel { fill: #4b5563; font-size: 11.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; paint-order: stroke; stroke: #ffffff; stroke-width: 5px; stroke-linejoin: round; }
+      .divider { stroke: #9aa5b1; stroke-width: 1.2; stroke-dasharray: 5 4; }
+      .arrowhead { fill: #4b5563; }
+      /* Equivalence colors: the same class marks the same thing on both sides,
+         used instead of drawing a connecting line between them. */
+      .eq-const { fill: #0f766e; font-size: 12px; font-weight: 700; }
+      .eq-branch { fill: #7c3aed; font-size: 12px; font-weight: 700; }
+      .eq-then { fill: #a4160a; font-size: 12px; font-weight: 700; }
+      .eq-else { fill: #b8860b; font-size: 12px; font-weight: 700; }
+      .eq-result { fill: #3b5bdb; font-size: 12px; font-weight: 700; }
+      @media (prefers-color-scheme: dark) {
+        .box { fill: #262b36; stroke: #9aa5b1; }
+        .ifbox { fill: #24304f; stroke: #8fa4ff; }
+        .nestbox { fill: #1c202a; stroke: #6b7684; }
+        .text { fill: #e8eaf0; }
+        .label { fill: #f2f4f8; }
+        .title { fill: #f5f6f8; }
+        .subtitle { fill: #b7c0cc; }
+        .caption { fill: #b7c0cc; }
+        .note { fill: #9aa5b1; }
+        .edge { stroke: #b7c0cc; }
+        .edgelabel { fill: #b7c0cc; stroke: #1c202a; }
+        .divider { stroke: #5a636e; }
+        .arrowhead { fill: #b7c0cc; }
+        .eq-const { fill: #5eead4; }
+        .eq-branch { fill: #c4b5fd; }
+        .eq-then { fill: #ff8a75; }
+        .eq-else { fill: #e8b84b; }
+        .eq-result { fill: #8fa4ff; }
+      }
+    </style>
+  </defs>
+  <text x="780" y="24" class="subtitle">same program in all three IRs: { let x = 1; if x { x + 1 } else { 2 } }</text>
+  <line x1="510" y1="40" x2="510" y2="700" class="divider"/>
+  <line x1="1020" y1="40" x2="1020" y2="700" class="divider"/>
+
+  <!-- COLUMN 1: calc-ir -->
+  <text x="265" y="60" class="title">calc-ir: a nested tree</text>
+  <rect x="20" y="90" width="150" height="26" rx="5" class="box"/>
+  <text x="30" y="108" class="eq-const">t0 = const 1.0</text>
+
+  <rect x="20" y="135" width="470" height="330" rx="8" class="ifbox"/>
+  <text x="32" y="157" class="label eq-branch">If  ·  dst = t1  ·  cond = t0</text>
+  <rect x="36" y="175" width="215" height="170" rx="6" class="nestbox"/>
+  <text x="46" y="195" class="label">then_block</text>
+  <text x="46" y="218" class="text">t2 = const 1.0</text>
+  <text x="46" y="238" class="text">t3 = t0 + t2</text>
+  <text x="46" y="262" class="eq-then">Copy t1 = t3</text>
+  <rect x="268" y="175" width="210" height="170" rx="6" class="nestbox"/>
+  <text x="278" y="195" class="label">else_block</text>
+  <text x="278" y="218" class="text">t4 = const 2.0</text>
+  <text x="278" y="262" class="eq-else">Copy t1 = t4</text>
+  <text x="20" y="490" class="eq-result">result: t1</text>
+
+  <text x="20" y="560" class="caption">
+    <tspan x="20" dy="0">One `If` contains two whole `Block`s.</tspan>
+    <tspan x="20" dy="18">Both branches write t1 by hand via</tspan>
+    <tspan x="20" dy="18"><tspan class="eq-then">Copy</tspan> ("phi via copies", A4).</tspan>
+  </text>
+
+  <!-- COLUMN 2: Cranelift -->
+  <text x="765" y="60" class="title">Cranelift IR: block graph</text>
+  <rect x="630" y="90" width="270" height="130" rx="8" class="box"/>
+  <text x="642" y="112" class="label">block0 (entry)</text>
+  <text x="642" y="134" class="eq-const">v0 = f64const 1.0</text>
+  <text x="642" y="152" class="text">v1 = f64const 0.0</text>
+  <text x="642" y="170" class="eq-branch">v2 = fcmp ne v0, v1</text>
+  <text x="642" y="188" class="eq-branch">brif v2, block1, block2</text>
+
+  <rect x="530" y="285" width="220" height="130" rx="8" class="box"/>
+  <text x="542" y="305" class="label">block1 (then)</text>
+  <text x="542" y="327" class="text">v3 = f64const 1.0</text>
+  <text x="542" y="345" class="text">v4 = fadd v0, v3</text>
+  <text x="542" y="365" class="eq-then">def_var(t1, v4)</text>
+  <text x="542" y="385" class="text">jump block3</text>
+
+  <rect x="775" y="285" width="225" height="110" rx="8" class="box"/>
+  <text x="787" y="305" class="label">block2 (else)</text>
+  <text x="787" y="327" class="text">v5 = f64const 2.0</text>
+  <text x="787" y="347" class="eq-else">def_var(t1, v5)</text>
+  <text x="787" y="367" class="text">jump block3</text>
+
+  <rect x="640" y="470" width="250" height="100" rx="8" class="ifbox"/>
+  <text x="652" y="492" class="label">block3 (merge)</text>
+  <text x="652" y="514" class="eq-result">v6 = use_var(t1)</text>
+  <text x="652" y="530" class="note">; phi resolved automatically</text>
+  <text x="652" y="552" class="eq-result">return v6</text>
+
+  <line x1="700" y1="220" x2="660" y2="285" class="edge" marker-end="url(#arrow)"/>
+  <line x1="830" y1="220" x2="880" y2="285" class="edge" marker-end="url(#arrow)"/>
+  <line x1="660" y1="415" x2="700" y2="470" class="edge" marker-end="url(#arrow)"/>
+  <line x1="880" y1="395" x2="830" y2="470" class="edge" marker-end="url(#arrow)"/>
+
+  <text x="530" y="625" class="caption">
+    <tspan x="530" dy="0">Phi is implicit: Variables + seal_block let</tspan>
+    <tspan x="530" dy="18">Cranelift's builder insert it on <tspan class="eq-result">use_var</tspan>.</tspan>
+  </text>
+
+  <!-- COLUMN 3: LLVM -->
+  <text x="1275" y="60" class="title">LLVM IR: block graph + explicit phi</text>
+  <rect x="1140" y="90" width="270" height="130" rx="8" class="box"/>
+  <text x="1152" y="112" class="label">entry</text>
+  <text x="1152" y="134" class="note">; %x = 1.0 (a Const, no instruction)</text>
+  <text x="1152" y="156" class="eq-branch">%truthy = fcmp une double %x, 0.0</text>
+  <text x="1152" y="178" class="eq-branch">br i1 %truthy, %then, %else</text>
+
+  <rect x="1040" y="285" width="230" height="110" rx="8" class="box"/>
+  <text x="1052" y="305" class="label">then</text>
+  <text x="1052" y="327" class="eq-then">%add = fadd double %x, 1.0</text>
+  <text x="1052" y="347" class="text">br label %merge</text>
+
+  <rect x="1285" y="285" width="225" height="110" rx="8" class="box"/>
+  <text x="1297" y="305" class="label">else</text>
+  <text x="1297" y="327" class="eq-else">; Copy = no instruction</text>
+  <text x="1297" y="347" class="text">br label %merge</text>
+
+  <rect x="1150" y="470" width="300" height="110" rx="8" class="ifbox"/>
+  <text x="1162" y="492" class="label">merge</text>
+  <text x="1162" y="514" class="eq-result">%r = phi double [ %add, %then ],</text>
+  <text x="1162" y="530" class="eq-result">                 [ 2.0, %else ]</text>
+  <text x="1162" y="552" class="eq-result">ret double %r</text>
+
+  <line x1="1210" y1="220" x2="1170" y2="285" class="edge" marker-end="url(#arrow)"/>
+  <line x1="1340" y1="220" x2="1390" y2="285" class="edge" marker-end="url(#arrow)"/>
+  <line x1="1170" y1="395" x2="1230" y2="470" class="edge" marker-end="url(#arrow)"/>
+  <line x1="1390" y1="395" x2="1370" y2="470" class="edge" marker-end="url(#arrow)"/>
+
+  <text x="1040" y="625" class="caption">
+    <tspan x="1040" dy="0">Phi is explicit: the backend writes it, naming each</tspan>
+    <tspan x="1040" dy="18">predecessor block. A Copy needs no instruction: it</tspan>
+    <tspan x="1040" dy="18">just re-points t1 at an existing value.</tspan>
+  </text>
+
+  <text x="780" y="722" class="caption" text-anchor="middle">Illustration only: inkwell's builder constant-folds this all-constant program (%x is 1.0, so it emits `br i1 true`);</text>
+  <text x="780" y="740" class="caption" text-anchor="middle">shown with %x opaque so the instructions that a real, non-constant condition would produce stay visible.</text>
+
+  <circle cx="480" cy="775" r="4" class="eq-const"/>
+  <text x="490" y="779" class="caption">t0 / v0 / %x</text>
+  <circle cx="600" cy="775" r="4" class="eq-branch"/>
+  <text x="610" y="779" class="caption">condition + branch</text>
+  <circle cx="770" cy="775" r="4" class="eq-then"/>
+  <text x="780" y="779" class="caption">then value</text>
+  <circle cx="880" cy="775" r="4" class="eq-else"/>
+  <text x="890" y="779" class="caption">else value</text>
+  <circle cx="990" cy="775" r="4" class="eq-result"/>
+  <text x="1000" y="779" class="caption">merge / result</text>
+</svg>

@@ -166,3 +166,26 @@ hand-built object file carries none of the `/DEFAULTLIB` directives a real
 `cl.exe`-compiled object would, so `libcmt.lib`/`libvcruntime.lib`/`libucrt.lib`
 have to be named explicitly on the MSVC link line for `mainCRTStartup` (which calls
 `main`) to resolve — Unix-style `cc`/`gcc` needed no equivalent change.
+
+## A7 — LLVM backend is feature-gated off by default; CI doesn't exercise it
+
+`llvm_backend.rs` is compiled only with `--features backend-llvm`, and that feature is
+*not* a default feature. LLVM is a large external C++ dependency needing an install
+(`LLVM_SYS_211_PREFIX`, LLVM 21.x); GitHub Actions' `ubuntu-latest` has none, and
+CLAUDE.md §4 says a commit must never land something CI would reject. Alternatives
+considered: (b) add an LLVM install step to `agent-evals.yml` — rejected for now because
+it adds minutes and a new failure mode to every run for a backend the required path
+doesn't depend on (spec.md §8.1 already wants it optional). Consequence: CI builds and
+tests only the default (Cranelift) configuration, so the LLVM backend is verified locally
+via `cargo {check,clippy,doc,build,test} --features backend-llvm` before committing.
+Adding a CI job with LLVM installed, and settling the default-feature question
+(spec.md §14 #4), is deferred to A8 alongside the `Backend` trait.
+
+Other small choices: (1) the `If` merge `phi` is built by hand (per-branch value-table
+clones plus `get_insert_block` for the predecessor), unlike A6's `Variable`s, because
+LLVM's API has no equivalent and building it is the point of the session; only the
+`If`'s `dst` needs one since it's the only multiply-defined `Temp` (A4's "phi via
+copies"). (2) `main.rs` dispatches via a `fn(&Program) -> Vec<u8>` pointer, the minimum
+that lets `build` be shared — not a `Backend` trait, which stays A8's. (3) `target-x86`
+only: `Target::initialize_native` needs the host architecture's `target-*` feature, so
+non-x86 hosts need one added until A8.

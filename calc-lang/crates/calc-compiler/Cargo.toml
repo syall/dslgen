@@ -18,3 +18,10 @@ cranelift-object = "0.135.2"
 cranelift-native = "0.135.2"
 target-lexicon = "0.13.5"
 cc = "1.4.6"
+inkwell = { version = "0.10", default-features = false, features = ["llvm21-1", "target-x86"], optional = true }
+
+# LLVM is a huge external C++ dependency (spec.md §8.1), so its backend is opt-in:
+# `cargo build --features backend-llvm` (needs `LLVM_SYS_211_PREFIX` pointing at an
+# LLVM 21.x install). A8 formalizes backend features across both backends.
+[features]
+backend-llvm = ["dep:inkwell"]

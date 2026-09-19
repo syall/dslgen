@@ -1,13 +1,15 @@
 //! calcc — the calc-lang compiler CLI (spec.md §11). `run --interpret` (session A5)
-//! and `build --backend=cranelift` (session A6) are the only subcommands so far:
-//! both share the parse → resolve → lower prefix, then either interpret the IR
-//! directly or hand it to `cranelift_backend`/`link_stub`. A real CLI-argument crate
-//! (`clap`), `--backend` dispatch across more than one backend, and a `check`
-//! subcommand land in A8/A13 — hand-rolled `env::args()` parsing is enough for two
-//! subcommands.
+//! and `build --backend=cranelift|llvm` (sessions A6/A7) are the only subcommands so
+//! far: both share the parse → resolve → lower prefix, then either interpret the IR
+//! directly or hand it to a backend (`cranelift_backend`, or `llvm_backend` when
+//! built with `--features backend-llvm`) and `link_stub`. A real CLI-argument crate
+//! (`clap`), trait-based `--backend` dispatch, and a `check` subcommand land in
+//! A8/A13 — hand-rolled `env::args()` parsing is enough for two subcommands.
 
 mod cranelift_backend;
 mod link_stub;
+#[cfg(feature = "backend-llvm")]
+mod llvm_backend;
 
 use std::env;
 use std::fs;
@@ -25,11 +27,24 @@ fn main() -> ExitCode {
         [cmd, backend, path, out_flag, out]
             if cmd == "build" && backend == "--backend=cranelift" && out_flag == "-o" =>
         {
-            build_cranelift(path, out)
+            build(path, out, cranelift_backend::compile_to_object)
+        }
+        #[cfg(feature = "backend-llvm")]
+        [cmd, backend, path, out_flag, out]
+            if cmd == "build" && backend == "--backend=llvm" && out_flag == "-o" =>
+        {
+            build(path, out, llvm_backend::compile_to_object)
+        }
+        #[cfg(not(feature = "backend-llvm"))]
+        [cmd, backend, ..] if cmd == "build" && backend == "--backend=llvm" => {
+            eprintln!(
+                "calcc: this build has no LLVM backend; rebuild with `--features backend-llvm`"
+            );
+            ExitCode::FAILURE
         }
         _ => {
             eprintln!(
-                "usage: calcc run --interpret <path>\n       calcc build --backend=cranelift <path> -o <output>"
+                "usage: calcc run --interpret <path>\n       calcc build --backend=<cranelift|llvm> <path> -o <output>"
             );
             ExitCode::FAILURE
         }
@@ -77,12 +92,14 @@ fn run_interpret(path: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn build_cranelift(path: &str, out: &str) -> ExitCode {
+/// `compile_to_object` is whichever backend's entry point `--backend` selected; A8
+/// replaces this function-pointer stand-in with a real `Backend` trait.
+fn build(path: &str, out: &str, compile_to_object: fn(&Program) -> Vec<u8>) -> ExitCode {
     let Some(program) = compile_to_ir(path) else {
         return ExitCode::FAILURE;
     };
 
-    let object_bytes = cranelift_backend::compile_to_object(&program);
+    let object_bytes = compile_to_object(&program);
 
     match link_stub::link(&object_bytes, Path::new(out)) {
         Ok(exe_path) => {

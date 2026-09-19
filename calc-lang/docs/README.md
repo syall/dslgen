@@ -36,5 +36,13 @@ Read in order:
    values, the builder); how Cranelift's `Variable`/SSA-construction mechanism avoids
    hand-writing `phi` nodes for `if`/`else`; and the first real use of the interpreter
    as a correctness oracle for a codegen backend's output.
+8. [a7-llvm-codegen-backend.md](a7-llvm-codegen-backend.md) — a second backend over the
+   same IR: LLVM IR basics (SSA, basic blocks, hand-built `phi` nodes); a three-way
+   diagram of calc-ir vs Cranelift IR vs LLVM IR; how `inkwell`'s methods map onto
+   `llvm-sys`'s C API calls; worked recipes for building a function, an `if`/`else` with a
+   `phi`, a call and an object file, plus LLVM's real error messages for common mistakes;
+   real Cranelift-vs-LLVM output for one program and what an optimizing backend buys;
+   feature-gating a heavy dependency in `Cargo.toml`; and what `unsafe` is, why an FFI
+   boundary like LLVM's C API needs it, and what that means for users of a safe wrapper.
 
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.
