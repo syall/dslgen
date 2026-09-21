@@ -189,3 +189,36 @@ copies"). (2) `main.rs` dispatches via a `fn(&Program) -> Vec<u8>` pointer, the 
 that lets `build` be shared — not a `Backend` trait, which stays A8's. (3) `target-x86`
 only: `Target::initialize_native` needs the host architecture's `target-*` feature, so
 non-x86 hosts need one added until A8.
+
+## A8 — Cranelift is the default backend; one `Backend` trait; LLVM gets its own CI job
+
+**Default features (spec.md §14 #4).** `default = ["backend-cranelift"]`; `backend-llvm`
+stays opt-in. Alternatives: LLVM-only (needs an LLVM install for every first build) or
+both on (same problem). Cranelift is pure Rust, so a fresh clone builds with nothing
+else installed, which is the friendlier first run; authors who want LLVM opt in with
+`--features backend-llvm` (or `--no-default-features --features backend-llvm` for LLVM
+alone). Cargo features are additive, so the two are deliberately *not* mutually
+exclusive: with both enabled, `--backend=` is required (there's no implicit default among
+several); with none, a `compile_error!` fires.
+
+**The trait.** `trait Backend { fn name(&self); fn compile(&self, &Program) ->
+Result<Vec<u8>, BackendError> }`, chosen at runtime through `&'static dyn Backend`
+(`backend::select`) rather than generics, because which backend runs is decided by a
+command-line string, not at compile time. The two `impl`s are unit structs wrapping the
+existing `compile_to_object` functions. Deliberately deferred: (1) converting the
+backends' internal `expect`/panics into `BackendError`s — the trait allows failure but
+nothing produces it yet, and rewriting both backends' internals isn't this session's
+deliverable; (2) any options on the trait (optimization level, target triple) — nothing
+needs them yet. `target-lexicon` stays unconditional because `link_stub` (not a backend)
+uses it, so it isn't gated with Cranelift.
+
+**CI.** A7 deferred an LLVM CI job to A8, but roadmap.md's A8 entry doesn't list one, so
+it was added here on request. `agent-evals.yml` now has a backend-agnostic `checks` job (`fmt`, `check`, `audit`,
+`build`) plus one job per feature combination (`test-cranelift`, `test-llvm`,
+`test-all-features`), each running clippy, doc (`-D warnings`) and tests for its own set;
+the two LLVM jobs install LLVM 21 from apt.llvm.org. (`KyleMayes/install-llvm-action`'s prebuilt 21.1.1 tarball was tried first and failed to link on the Ubuntu runner: it is built against libc++, but `llvm-sys` links `-lstdc++`, giving undefined `std::__1::...` symbols. apt.llvm.org's packages are built against libstdc++.) `fmt` and `audit`
+don't depend on features at all; `check`/`build` there use default features only. Separate jobs rather than one, because `#[cfg]`-gated code is
+only checked when its feature is on, so each promised combination must be built on its own
+and a failure should name the combination. The three feature combinations were verified locally against a real
+LLVM 21.1.1 install. That did not catch the libc++/libstdc++ link failure above, which is
+specific to Linux; the apt.llvm.org setup is likewise only confirmed by its CI run.

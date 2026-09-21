@@ -6,7 +6,8 @@
 //! binary), so it needs no `mod` declaration. It uses only Cranelift, and
 //! `new_object_module` below is deliberately a copy of the private one in
 //! `src/cranelift_backend.rs`, so a reader can follow a recipe start to finish
-//! without leaving this file.
+//! without leaving this file. Only built with `--features backend-cranelift`.
+#![cfg(feature = "backend-cranelift")]
 
 use cranelift_codegen::ir::condcodes::FloatCC;
 use cranelift_codegen::ir::{types, AbiParam, InstBuilder, Signature};

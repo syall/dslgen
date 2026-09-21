@@ -1,47 +1,37 @@
-# Session A7 — LLVM codegen backend (via inkwell)
+# Session A8 — The `Backend` trait and feature-gated backend selection
 
-Spec refs: spec.md §8.1. Roadmap: roadmap.md "A7".
+Spec refs: spec.md §8.1, §14 #4. Roadmap: roadmap.md "A8".
 
 ## Plan
 
-1. Gate LLVM behind an off-by-default `backend-llvm` feature: optional
-   `inkwell = { version = "0.10", default-features = false, features = ["llvm21-1", "target-x86"] }`
-   in `calc-compiler/Cargo.toml`. CI (no LLVM) keeps testing the default
-   configuration; the LLVM configuration is verified locally.
-2. Add `src/llvm_backend.rs` with `compile_to_object(&Program) -> Vec<u8>`, mirroring
-   the Cranelift backend: `calc_main() -> double` plus C `main() -> i32` using
-   `llvm.fptosi.sat`. Temps are plain SSA values; `If` builds its merge `phi` by hand
-   from per-branch value-table clones and each branch's final insertion block.
-   `module.verify()` before emission.
-3. `main.rs`: accept `--backend=llvm` (with a clear error when the feature is off);
-   share one `build` function via a function pointer — no `Backend` trait (A8).
-4. Reuse `link_stub::link` unchanged.
-5. Tests: the four A6 programs plus a nested `if`, each checked against the
-   interpreter and the Cranelift backend; a `phi` presence test; an `-O2` test.
-6. Teaching doc `a7-llvm-codegen-backend.md` (incl. a dedicated `unsafe` section), README
-   entry, DECISIONS.md entry, this file.
-7. Verify with the full CLAUDE.md §4 sequence, default features and `--features backend-llvm`.
+1. `src/backend.rs` (new): `trait Backend { name, compile -> Result<Vec<u8>, BackendError> }`,
+   `BackendError`, `enabled()` (each entry `#[cfg(feature = …)]`-gated) and
+   `select(Option<&str>)`: explicit name → that backend; known-but-disabled name → "rebuild with
+   `--features …`" error; no name → the sole enabled backend, else an error listing choices.
+   `compile_error!` if no backend feature is on.
+2. `CraneliftBackend` / `LlvmBackend` unit structs implement the trait, wrapping the existing
+   `compile_to_object` functions. Internal panics stay panics (conversion to `BackendError` deferred).
+3. Cargo features: `backend-cranelift` (default) makes the `cranelift-*` crates optional;
+   `backend-llvm` unchanged. `target-lexicon` stays unconditional (`link_stub` uses it).
+4. `main.rs`: gate `mod cranelift_backend`; parse `build [--backend=<name>] <path> -o <out>`;
+   `build` dispatches through `backend::select`; drop the per-backend match arms.
+5. Gate tests: `#![cfg(feature = "backend-cranelift")]` on `tests/cranelift_recipes.rs`; the LLVM
+   tests' Cranelift comparison only when both features are on; unit tests for `select`.
+6. DECISIONS.md A8 entry (§14 #4 default = Cranelift-only; trait design; deferrals; CI).
+7. Teaching doc `calc-lang/docs/a8-backend-trait-and-feature-gating.md` incl. a "How Cargo
+   features work" section, and README entry 9.
+8. One CI job per feature combination in `agent-evals.yml` — a backend-agnostic `checks` job (fmt, check, audit, build),
+   `test-cranelift`, `test-llvm` and `test-all-features` (each: clippy, doc, test; LLVM 21 from apt.llvm.org) —
+   added on request; no roadmap session had scheduled it.
 
 ## Outcome
 
-Implemented as planned. Departures / findings:
-
-- `inkwell`'s builder constant-folds eagerly, so `2 + 3 * 4` is already `ret double 14`
-  at "-O0" and constant `if` conditions are already `br i1 true`. The planned
-  "optimizer folds straight-line arithmetic" test would have proved nothing, so it became
-  `optimizer_collapses_a_constant_if` (phi + branch at O0, plain `ret` at O2).
-- Per review, the doc was reworked the way A6's was: an `inkwell` -> LLVM C API mapping, a
-  calc-ir / Cranelift / LLVM diagram (`docs/images/a7-ir-comparison.svg`), a line-by-line
-  `phi` walk-through with real IR, and worked *recipes* (function, `if`/`else` + `phi`,
-  call, module -> object file) in place of a per-call crash course. The recipes are built as
-  `tests/llvm_recipes.rs` (feature-gated), which also records LLVM's verbatim errors for
-  deliberate mistakes; the doc's "What LLVM enforces" table quotes them.
-- No `unsafe` was needed in our code; the doc's `unsafe` section explains why.
-- `LLVM_SYS_211_PREFIX` wasn't visible in the shell this session and was set inline.
-- Real disassembly comparison (LLVM 9 bytes of code for `calc_main` vs Cranelift's ~0x75)
-  is in the doc; objects are 1049 vs ~350 bytes.
-
-Verification: the full CLAUDE.md §4 sequence (fmt, check, clippy `-D warnings`, doc
-`-D warnings`, audit, build, test) passes with default features (4 calcc tests) and
-check/clippy/doc/build/test pass again with `--features backend-llvm` (11 unit tests plus 11 in `tests/llvm_recipes.rs`).
-`calcc build --backend=llvm` on `2 + 3 * 4` produced an executable exiting 14.
+Implemented as planned. Departures: `target-lexicon` is *not* made optional (the plan listed it
+under Cranelift, but `link_stub` needs it in an LLVM-only build). Verified locally against a real
+LLVM 21.1.1 install: default, `--no-default-features --features backend-llvm`, and
+`--all-features` all pass tests and clippy; `--no-default-features` alone hits the `compile_error!`;
+`cargo tree` shows zero Cranelift crates in the LLVM-only graph and zero `inkwell` in the default.
+`calcc build` works with the implicit default in both single-backend builds. The two LLVM
+workflow jobs can only be confirmed on GitHub: the first run failed to link
+(`install-llvm-action`'s LLVM is built against libc++, `llvm-sys` links libstdc++), so they now install
+LLVM 21 from apt.llvm.org; that setup is unconfirmed until its CI run.

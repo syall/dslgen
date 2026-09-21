@@ -1,9 +1,8 @@
 //! LLVM codegen backend (spec.md §8.1, session A7): lowers the same `calc-ir` IR
 //! `cranelift_backend` consumes to a native object file, via the `inkwell` crate's
-//! safe wrappers around LLVM's C API. Only compiled with `--features backend-llvm`
-//! (see `Cargo.toml` and `DECISIONS.md`'s A7 entry). The `Backend` trait unifying
-//! this and the Cranelift backend is A8's job, so the entry point here just mirrors
-//! `cranelift_backend::compile_to_object`'s signature. See
+//! safe wrappers around LLVM's C API. It's the second `Backend` implementation
+//! ([`LlvmBackend`], added in A8 — see `backend.rs`); only compiled with
+//! `--features backend-llvm` (see `Cargo.toml` and `DECISIONS.md`'s A7 entry). See
 //! `calc-lang/docs/a7-llvm-codegen-backend.md` for the full walkthrough.
 
 use std::collections::HashMap;
@@ -19,6 +18,8 @@ use inkwell::values::{FloatValue, FunctionValue};
 use inkwell::{FloatPredicate, OptimizationLevel};
 
 use calc_ir::{Block as IrBlock, Instr, Program, Temp};
+
+use crate::backend::{Backend, BackendError};
 
 /// The value each `Temp` currently holds. Unlike A6's Cranelift `Variable`s, this
 /// is a plain SSA-value table: `Const`/`BinOp`/`Copy` each define one LLVM value,
@@ -40,6 +41,19 @@ pub fn compile_to_object(program: &Program) -> Vec<u8> {
         .expect("LLVM can emit an object file")
         .as_slice()
         .to_vec()
+}
+
+/// The LLVM [`Backend`]: a unit struct, since it carries no configuration yet.
+pub struct LlvmBackend;
+
+impl Backend for LlvmBackend {
+    fn name(&self) -> &'static str {
+        "llvm"
+    }
+
+    fn compile(&self, program: &Program) -> Result<Vec<u8>, BackendError> {
+        Ok(compile_to_object(program))
+    }
 }
 
 /// Builds the module and returns its textual LLVM IR, optionally after LLVM's
@@ -249,7 +263,9 @@ mod tests {
     use calc_syntax::{resolve, ParserFrontend};
 
     use super::{compile_to_object, llvm_ir};
-    use crate::{cranelift_backend, link_stub};
+    #[cfg(feature = "backend-cranelift")]
+    use crate::cranelift_backend;
+    use crate::link_stub;
 
     fn lower_source(src: &str) -> calc_ir::Program {
         let ast = LalrpopFrontend.parse(src).expect("should parse");
@@ -268,19 +284,23 @@ mod tests {
         status.code().expect("process should exit normally")
     }
 
-    /// Same oracle as A6: the interpreter's answer — and, new here, the Cranelift
-    /// backend's exit code for the same program — must both equal LLVM's.
+    /// Same oracle as A6: the interpreter's answer — and, when the Cranelift backend
+    /// is also compiled in, its exit code for the same program — must equal LLVM's.
     fn assert_matches_interpreter_and_cranelift(src: &str, out_name: &str) {
         let program = lower_source(src);
         let calc_ir::Value::Number(expected) = calc_ir::interpret(&program);
 
         let llvm = link_and_run(&compile_to_object(&program), &format!("llvm_{out_name}"));
-        let clif = link_and_run(
-            &cranelift_backend::compile_to_object(&program),
-            &format!("clif_{out_name}"),
-        );
         assert_eq!(llvm, expected as i32);
-        assert_eq!(llvm, clif);
+
+        #[cfg(feature = "backend-cranelift")]
+        {
+            let clif = link_and_run(
+                &cranelift_backend::compile_to_object(&program),
+                &format!("clif_{out_name}"),
+            );
+            assert_eq!(llvm, clif);
+        }
     }
 
     #[test]

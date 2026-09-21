@@ -1,9 +1,8 @@
 //! Cranelift codegen backend (spec.md §8.1, session A6): lowers `calc-ir`'s IR to a
-//! native object file, the first of v1's two planned `Backend`-trait
-//! implementations (the trait itself, unifying this and A7's LLVM backend, doesn't
-//! exist yet — see `DECISIONS.md`'s A6 entry for why that's deliberately deferred to
-//! A8, not built speculatively here). See
-//! `calc-lang/docs/a6-cranelift-codegen-backend.md` for the full walkthrough.
+//! native object file. It's one of v1's two `Backend` implementations
+//! ([`CraneliftBackend`], added in A8 — see `backend.rs`); only compiled with
+//! `--features backend-cranelift`. See `calc-lang/docs/a6-cranelift-codegen-backend.md`
+//! for the full walkthrough.
 
 use std::collections::HashMap;
 
@@ -16,6 +15,8 @@ use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use calc_ir::{Block as IrBlock, Instr, Program, Temp};
+
+use crate::backend::{Backend, BackendError};
 
 /// Maps every `Temp` used by a program to the Cranelift `Variable` standing in for
 /// it — `declare_var` mints `Variable`s itself (it doesn't accept caller-chosen
@@ -40,6 +41,19 @@ pub fn compile_to_object(program: &Program) -> Vec<u8> {
 
     let product = module.finish();
     product.object.write().expect("valid object file")
+}
+
+/// The Cranelift [`Backend`]: a unit struct, since it carries no configuration yet.
+pub struct CraneliftBackend;
+
+impl Backend for CraneliftBackend {
+    fn name(&self) -> &'static str {
+        "cranelift"
+    }
+
+    fn compile(&self, program: &Program) -> Result<Vec<u8>, BackendError> {
+        Ok(compile_to_object(program))
+    }
 }
 
 /// An empty `ObjectModule` targeting the host CPU — the fixed opening sequence of

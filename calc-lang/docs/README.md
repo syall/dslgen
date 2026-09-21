@@ -45,4 +45,10 @@ Read in order:
    feature-gating a heavy dependency in `Cargo.toml`; and what `unsafe` is, why an FFI
    boundary like LLVM's C API needs it, and what that means for users of a safe wrapper.
 
+9. [a8-backend-trait-and-feature-gating.md](a8-backend-trait-and-feature-gating.md) — the
+   extension-point pattern: one `Backend` trait both codegen backends implement, and
+   run-time `--backend=` selection via `&dyn Backend`; how Cargo features work (optional
+   dependencies, `default`, `#[cfg(feature)]`, feature unification and why backends can't
+   be mutually exclusive); testing each feature combination, including an LLVM CI job.
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

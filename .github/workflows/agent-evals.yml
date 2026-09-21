@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# One job per feature combination of calc-compiler's codegen backends (spec.md §8.1):
+# Cranelift only (the default), LLVM only, and everything at once. Features are
+# additive and #[cfg]-gated code is only type-checked when its feature is on, so each
+# combination we promise has to be built on its own. The `checks` job holds what isn't
+# about a particular backend: `fmt` (source-wide), `audit` (`Cargo.lock` is one file),
+# and a plain workspace `check`/`build` (default features). Only the per-combination
+# jobs run `clippy`, `doc` and `test`, since those are what surface feature-gated code.
+
 jobs:
-  test:
+  checks:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -16,19 +24,109 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: calc-lang
+          key: checks
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
       - run: cargo fmt --check
       - run: cargo check --workspace
+      - run: cargo audit
+      - run: cargo build --workspace
+
+  test-cranelift:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: calc-lang
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: calc-lang
+          key: cranelift
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
-      - run: cargo audit
-      - run: cargo build --workspace
       - run: cargo test --workspace
+
+  test-llvm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: calc-lang
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: calc-lang
+          key: llvm
+      # LLVM from apt.llvm.org, which is built against libstdc++ like the runner's default
+      # toolchain. (The prebuilt tarballs of other installers are built against libc++, and
+      # linking them fails with undefined `std::__1::...` symbols.) llvm-sys wants the dev
+      # package plus libpolly and zstd for a static link.
+      - name: Install LLVM 21
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main" | sudo tee /etc/apt/sources.list.d/llvm-21.list
+          sudo apt-get update
+          sudo apt-get install -y llvm-21-dev libpolly-21-dev libzstd-dev
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+      - run: cargo clippy -p calc-compiler --all-targets --no-default-features --features backend-llvm -- -D warnings
+      - run: cargo doc -p calc-compiler --no-deps --no-default-features --features backend-llvm
+        env:
+          RUSTDOCFLAGS: -D warnings
+      # Split build from run so the step timings show which is slow. Debug info is off
+      # because LLVM's static libraries make every linked test binary huge without it.
+      - run: cargo test -p calc-compiler --no-default-features --features backend-llvm --no-run
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+      - run: cargo test -p calc-compiler --no-default-features --features backend-llvm
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+
+  test-all-features:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: calc-lang
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: calc-lang
+          key: all-features
+      # LLVM from apt.llvm.org, which is built against libstdc++ like the runner's default
+      # toolchain. (The prebuilt tarballs of other installers are built against libc++, and
+      # linking them fails with undefined `std::__1::...` symbols.) llvm-sys wants the dev
+      # package plus libpolly and zstd for a static link.
+      - name: Install LLVM 21
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main" | sudo tee /etc/apt/sources.list.d/llvm-21.list
+          sudo apt-get update
+          sudo apt-get install -y llvm-21-dev libpolly-21-dev libzstd-dev
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - run: cargo test --workspace --all-features --no-run
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+      - run: cargo test --workspace --all-features
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
