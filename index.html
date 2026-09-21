@@ -277,12 +277,12 @@
   <p class="sub">Progress through <code>roadmap.md</code>'s session plan for DSL-Generator's hand-built calculator-language toolchain (Part A), its generalization into the <code>dslgen</code> meta-tool (Part B), and advanced polish (Part C).</p>
 
   <div class="stat-band">
-    <div class="stat-num">8<small>/33</small></div>
+    <div class="stat-num">9<small>/33</small></div>
     <div class="stat-body">
-      <div class="stat-label">Required-path sessions complete — 24%</div>
-      <div class="bar-track"><div class="bar-fill" style="width:24.2%"></div></div>
+      <div class="stat-label">Required-path sessions complete — 27%</div>
+      <div class="bar-track"><div class="bar-fill" style="width:27.3%"></div></div>
     </div>
-    <div class="stat-next">Next up: <b>A8</b> — Backend trait</div>
+    <div class="stat-next">Next up: <b>A9</b> — Built-ins: native Rust</div>
   </div>
 
   <div class="parts">
@@ -290,8 +290,8 @@
     <div class="part-card">
       <h3>Part A — Hand-built calc-lang</h3>
       <p class="desc">One DSL toolchain built entirely by hand, no generation.</p>
-      <div class="part-count"><span>Sessions</span><b>8 / 17</b></div>
-      <div class="bar-track"><div class="bar-fill" style="width:47.1%"></div></div>
+      <div class="part-count"><span>Sessions</span><b>9 / 17</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:52.9%"></div></div>
     </div>
     </a>
     <div class="part-card">
@@ -322,8 +322,8 @@
       <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a5-tree-walking-interpreter.md"><span class="sid">A5</span><span class="row-desc"><b>Tree-walking interpreter.</b> calcc run --interpret works end to end. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
       <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a6-cranelift-codegen-backend.md"><span class="sid">A6</span><span class="row-desc"><b>Cranelift backend.</b> calcc build --backend=cranelift emits an object file. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
       <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a7-llvm-codegen-backend.md"><span class="sid">A7</span><span class="row-desc"><b>LLVM backend.</b> Equivalent output via inkwell, compared against Cranelift. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
-      <div class="row"><span class="sid">A8</span><span class="row-desc"><b>Backend trait.</b> Feature-gated backend selection, one trait for both.</span><span class="pill next">Next</span></div>
-      <div class="row"><span class="sid">A9</span><span class="row-desc"><b>Built-ins: native Rust.</b> add/mul callable through both backends.</span><span class="pill todo">Upcoming</span></div>
+      <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a8-backend-trait-and-feature-gating.md" target="_blank" rel="noopener"><span class="sid">A8</span><span class="row-desc"><b>Backend trait.</b> Feature-gated backend selection, one trait for both. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
+      <div class="row"><span class="sid">A9</span><span class="row-desc"><b>Built-ins: native Rust.</b> add/mul callable through both backends.</span><span class="pill next">Next</span></div>
       <div class="row"><span class="sid">A10</span><span class="row-desc"><b>Built-ins: C-ABI FFI.</b> One FFI built-in linked into a tiny C library.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">A11</span><span class="row-desc"><b>Built-ins: subprocess/IPC.</b> format_currency backed by a Python worker.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">A12</span><span class="row-desc"><b>Link driver.</b> Object files to a runnable native executable.</span><span class="pill todo">Upcoming</span></div>
@@ -366,7 +366,7 @@
   </details>
 
   <footer>
-    Counts track roadmap.md's <b>required path</b> (33 sessions across Parts A–C) — the three optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A17</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>aabd748</code>, "Add A7: LLVM codegen backend via inkwell") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 done (A7, off the minimum path, is also done); A8 → A9 → A13 → B1 → B2 → B4 → B5 → B7 remain.
+    Counts track roadmap.md's <b>required path</b> (33 sessions across Parts A–C) — the three optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A17</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>c503f24</code>, "Add A8: Backend trait and feature-gated backend selection") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 done (A7, off the minimum path, is also done); A9 → A13 → B1 → B2 → B4 → B5 → B7 remain.
   </footer>
 </div>
 </body>
