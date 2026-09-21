@@ -51,4 +51,12 @@ Read in order:
    dependencies, `default`, `#[cfg(feature)]`, feature unification and why backends can't
    be mutually exclusive); testing each feature combination, including an LLVM CI job.
 
+10. [a9-native-rust-builtins.md](a9-native-rust-builtins.md) — built-ins backed by native
+    Rust functions: why `+`/`*` now lower to a generic `CallBuiltin` instruction; the new
+    `calc-runtime` crate explained from scratch (`extern "C"`, `#[no_mangle]`, symbols, the
+    ABI, function pointers); what a linker is and how an object file's undefined symbols are
+    resolved from a static library built by `build.rs`; before/after calc-ir, Cranelift IR,
+    LLVM IR and machine code for one program, plus a "call an imported function" recipe for
+    each backend; what losing inlining costs.
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

@@ -1,0 +1,72 @@
+<svg viewBox="0 0 1100 560" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .box { fill: #f2f4f8; stroke: #4b5563; stroke-width: 1.5; }
+      .reg { fill: #fff7e0; stroke: #b45309; stroke-width: 1.6; }
+      .text { fill: #1f2430; font-size: 13px; }
+      .label { fill: #1f2430; font-size: 14px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .step { fill: #3b5bdb; font-size: 13px; font-weight: 700; }
+      .title { fill: #1f2430; font-size: 18px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; text-anchor: middle; }
+      .caption { fill: #4b5563; font-size: 12.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .dim { fill: #6b7684; font-size: 12px; }
+      .val { fill: #b45309; font-size: 13px; font-weight: 700; }
+      .edge { stroke: #4b5563; stroke-width: 1.6; fill: none; }
+      .flow { stroke: #3b5bdb; stroke-width: 1.8; fill: none; }
+      .arrowhead { fill: #4b5563; }
+    </style>
+  </defs>
+  <rect class="bg" width="1100" height="560"/>
+  <text class="title" x="550" y="30">What happens at a call to calc_add(1.0, 2.0)</text>
+
+  <!-- caller -->
+  <rect class="box" x="30" y="60" width="360" height="300" rx="8"/>
+  <text class="label" x="48" y="86">Caller: calc_main (compiled by us)</text>
+  <text class="step" x="48" y="122">1</text><text class="text" x="70" y="122">load 1.0 into xmm0</text>
+  <text class="step" x="48" y="150">2</text><text class="text" x="70" y="150">load 2.0 into xmm1</text>
+  <text class="step" x="48" y="178">3</text><text class="text" x="70" y="178">reserve 32 bytes of "shadow space"</text>
+  <text class="dim" x="70" y="196">(Windows x64 only; done once in the prologue)</text>
+  <text class="step" x="48" y="228">4</text><text class="text" x="70" y="228">call calc_add</text>
+  <text class="dim" x="70" y="246">pushes the return address, jumps</text>
+  <text class="step" x="48" y="292">7</text><text class="text" x="70" y="292">the answer is now in xmm0: use it</text>
+
+  <!-- callee -->
+  <rect class="box" x="710" y="60" width="360" height="300" rx="8"/>
+  <text class="label" x="728" y="86">Callee: calc_add (compiled by rustc)</text>
+  <text class="text" x="728" y="122">a + b</text>
+  <text class="step" x="728" y="156">5</text><text class="text" x="750" y="156">addsd  %xmm1, %xmm0</text>
+  <text class="dim" x="750" y="174">xmm0 = xmm0 + xmm1  (a is in xmm0, b in xmm1)</text>
+  <text class="step" x="728" y="210">6</text><text class="text" x="750" y="210">retq</text>
+  <text class="dim" x="750" y="228">pops the return address, jumps back</text>
+  <text class="dim" x="728" y="290">Real disassembly of the runtime library's</text>
+  <text class="dim" x="728" y="308">calc_add: just these two instructions.</text>
+
+  <!-- registers -->
+  <rect class="reg" x="430" y="90" width="240" height="70" rx="6"/>
+  <text class="label" x="550" y="114" text-anchor="middle">xmm0</text>
+  <text class="val" x="550" y="140" text-anchor="middle">1.0 in  →  3.0 out</text>
+  <rect class="reg" x="430" y="180" width="240" height="70" rx="6"/>
+  <text class="label" x="550" y="204" text-anchor="middle">xmm1</text>
+  <text class="val" x="550" y="230" text-anchor="middle">2.0 in</text>
+  <text class="dim" x="550" y="278" text-anchor="middle">floating-point registers</text>
+  <text class="dim" x="550" y="296" text-anchor="middle">= where the ABI says arguments live</text>
+
+  <!-- arguments: caller -> registers -> callee, one straight horizontal arrow per register -->
+  <path class="flow" d="M390,125 L430,125" marker-end="url(#arrow)"/>
+  <path class="flow" d="M390,215 L430,215" marker-end="url(#arrow)"/>
+  <path class="flow" d="M670,125 L710,125" marker-end="url(#arrow)"/>
+  <path class="flow" d="M670,215 L710,215" marker-end="url(#arrow)"/>
+  <!-- return: down out of the callee, left along the bottom, up into the caller -->
+  <path class="edge" d="M890,360 L890,402 L210,402 L210,360" marker-end="url(#arrow)"/>
+  <text class="caption" x="550" y="394" text-anchor="middle">return: result comes back in xmm0</text>
+
+  <!-- ABI rules -->
+  <rect class="box" x="30" y="420" width="1040" height="120" rx="8"/>
+  <text class="label" x="48" y="446">The "ABI" is the agreement both sides must keep (extern "C" = the platform's C version)</text>
+  <text class="text" x="48" y="474">• 1st and 2nd floating-point arguments go in xmm0 and xmm1; a floating-point result comes back in xmm0.</text>
+  <text class="text" x="48" y="496">• Windows x64: caller reserves 32 bytes of shadow space, stack 16-byte aligned at the call; xmm6-xmm15 are preserved.</text>
+  <text class="text" x="48" y="518">• Linux/macOS (System V): same registers for two f64s; no shadow space; every xmm register may be clobbered.</text>
+</svg>

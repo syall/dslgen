@@ -299,3 +299,36 @@ mod mistakes {
         assert!(verify_error(&module).contains("Instruction does not dominate all uses"));
     }
 }
+
+#[test]
+fn recipe_5_calling_an_imported_function() {
+    let context = Context::create();
+    let module = context.create_module("recipes");
+    let builder = context.create_builder();
+    let f64_ty = context.f64_type();
+
+    // A function with no body is a *declaration*: the object file records an
+    // undefined symbol for the linker to resolve later.
+    let calc_add = module.add_function(
+        "calc_add",
+        f64_ty.fn_type(&[f64_ty.into(), f64_ty.into()], false),
+        None,
+    );
+
+    let caller = module.add_function("caller", f64_ty.fn_type(&[], false), None);
+    let entry = context.append_basic_block(caller, "entry");
+    builder.position_at_end(entry);
+    let (one, two) = (f64_ty.const_float(1.0), f64_ty.const_float(2.0));
+    let result = builder
+        .build_call(calc_add, &[one.into(), two.into()], "sum")
+        .unwrap()
+        .try_as_basic_value()
+        .unwrap_basic();
+    builder.build_return(Some(&result)).unwrap();
+
+    module.verify().unwrap();
+    let ir = module.print_to_string().to_string();
+    println!("{ir}");
+    assert!(ir.contains("declare double @calc_add(double, double)"));
+    assert!(ir.contains("%sum = call double @calc_add(double 1.000000e+00, double 2.000000e+00)"));
+}

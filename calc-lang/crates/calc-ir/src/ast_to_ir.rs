@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use calc_syntax::{Expr, Stmt};
+use calc_syntax::{BinOp, Expr, Stmt};
 
 use crate::ir::{Block, Instr, Program, Temp};
 
@@ -17,6 +17,17 @@ pub fn lower(expr: &Expr) -> Program {
     Program {
         body: Block(instrs),
         result,
+    }
+}
+
+/// calc-lang's only "call syntax" is its operators: `+` and `*` are implemented by the
+/// `add`/`mul` built-ins (spec.md §7, session A9), so they lower to `CallBuiltin`.
+/// `-` and `/` have no built-in yet and stay inline `BinOp`s.
+fn builtin_for(op: BinOp) -> Option<&'static str> {
+    match op {
+        BinOp::Add => Some("add"),
+        BinOp::Mul => Some("mul"),
+        BinOp::Sub | BinOp::Div => None,
     }
 }
 
@@ -56,11 +67,18 @@ fn lower_expr(
             let lhs = lower_expr(lhs, env, instrs, next_temp);
             let rhs = lower_expr(rhs, env, instrs, next_temp);
             let dst = fresh(next_temp);
-            instrs.push(Instr::BinOp {
-                dst,
-                op: *op,
-                lhs,
-                rhs,
+            instrs.push(match builtin_for(*op) {
+                Some(name) => Instr::CallBuiltin {
+                    dst,
+                    name: name.to_string(),
+                    args: vec![lhs, rhs],
+                },
+                None => Instr::BinOp {
+                    dst,
+                    op: *op,
+                    lhs,
+                    rhs,
+                },
             });
             dst
         }
@@ -114,7 +132,7 @@ fn lower_expr(
 mod tests {
     use super::*;
     use calc_syntax::lalrpop_frontend::LalrpopFrontend;
-    use calc_syntax::{BinOp, ParserFrontend};
+    use calc_syntax::ParserFrontend;
 
     #[test]
     fn lowers_a_let_bound_if_expression() {
@@ -140,11 +158,10 @@ mod tests {
                                 dst: Temp(2),
                                 value: 1.0
                             },
-                            Instr::BinOp {
+                            Instr::CallBuiltin {
                                 dst: Temp(3),
-                                op: BinOp::Add,
-                                lhs: Temp(0),
-                                rhs: Temp(2),
+                                name: "add".to_string(),
+                                args: vec![Temp(0), Temp(2)],
                             },
                             Instr::Copy {
                                 dst: Temp(1),
@@ -165,6 +182,78 @@ mod tests {
                 ]),
                 result: Temp(1),
             }
+        );
+    }
+
+    #[test]
+    fn plus_and_times_lower_to_builtin_calls_but_minus_and_divide_stay_inline() {
+        let ast = LalrpopFrontend
+            .parse("(1 + 2) * 3 - 4 / 5")
+            .expect("should parse");
+        let Program { body, .. } = lower(&ast);
+
+        let call_names: Vec<&str> = body
+            .0
+            .iter()
+            .filter_map(|i| match i {
+                Instr::CallBuiltin { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        let inline_ops: Vec<BinOp> = body
+            .0
+            .iter()
+            .filter_map(|i| match i {
+                Instr::BinOp { op, .. } => Some(*op),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(call_names, ["add", "mul"]);
+        assert_eq!(inline_ops, [BinOp::Div, BinOp::Sub]);
+    }
+
+    /// Names an instruction's variant. The `match` has no wildcard arm, so adding a new
+    /// `Instr` variant breaks the build here until it's listed — and therefore until
+    /// `lowering_emits_every_kind_of_instruction`'s program is extended to emit it.
+    fn kind(instr: &Instr) -> &'static str {
+        match instr {
+            Instr::Const { .. } => "Const",
+            Instr::BinOp { .. } => "BinOp",
+            Instr::CallBuiltin { .. } => "CallBuiltin",
+            Instr::Copy { .. } => "Copy",
+            Instr::If { .. } => "If",
+        }
+    }
+
+    fn collect_kinds(block: &Block, kinds: &mut std::collections::BTreeSet<&'static str>) {
+        for instr in &block.0 {
+            kinds.insert(kind(instr));
+            if let Instr::If {
+                then_block,
+                else_block,
+                ..
+            } = instr
+            {
+                collect_kinds(then_block, kinds);
+                collect_kinds(else_block, kinds);
+            }
+        }
+    }
+
+    /// One program that lowers to every `Instr` variant: `Const` (the literals), `If` with
+    /// its two `Copy`s (the branches' shared result), `CallBuiltin` (`+`) and inline
+    /// `BinOp` (`-`).
+    #[test]
+    fn lowering_emits_every_kind_of_instruction() {
+        let ast = LalrpopFrontend
+            .parse("if 1 { 2 + 3 } else { 4 - 5 }")
+            .expect("should parse");
+        let mut kinds = std::collections::BTreeSet::new();
+        collect_kinds(&lower(&ast).body, &mut kinds);
+
+        assert_eq!(
+            kinds.into_iter().collect::<Vec<_>>(),
+            ["BinOp", "CallBuiltin", "Const", "Copy", "If"]
         );
     }
 }

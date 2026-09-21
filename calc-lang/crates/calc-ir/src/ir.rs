@@ -25,6 +25,16 @@ pub enum Instr {
         lhs: Temp,
         rhs: Temp,
     },
+    /// Calls the built-in named `name` (looked up in `calc_runtime::BUILTINS`) with
+    /// `args`, writing its result to `dst`. Unlike a user-defined call there is no
+    /// callee body in the program: the callee is an external symbol the linker
+    /// supplies (spec.md §7). Operator-agnostic on purpose — lowering emits it for
+    /// `+`/`*` today, but a call-syntax frontend could emit the same node directly.
+    CallBuiltin {
+        dst: Temp,
+        name: String,
+        args: Vec<Temp>,
+    },
     /// Copies `src` into `dst`. Used to funnel an `If`'s two branches into one
     /// shared result temp ("phi via copies") — see the module docs.
     Copy {

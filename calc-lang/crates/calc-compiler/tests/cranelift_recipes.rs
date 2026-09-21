@@ -163,3 +163,42 @@ fn recipe_3_one_function_calling_another() {
     module.define_function(caller, &mut ctx).unwrap();
     assert!(clif.contains("call fn0()"));
 }
+
+#[test]
+fn recipe_5_calling_an_imported_function() {
+    let mut module = new_object_module();
+    let sig = f64_sig(&module, 2);
+
+    // `Linkage::Import` declares a function this module does *not* define: the object
+    // file records an undefined symbol for the linker to resolve later.
+    let calc_add = module
+        .declare_function("calc_add", Linkage::Import, &sig)
+        .unwrap();
+    let caller = module
+        .declare_function("caller", Linkage::Export, &f64_sig(&module, 0))
+        .unwrap();
+
+    let mut ctx = Context::new();
+    ctx.func.signature = f64_sig(&module, 0);
+    let mut fb_ctx = FunctionBuilderContext::new();
+    let mut b = FunctionBuilder::new(&mut ctx.func, &mut fb_ctx);
+    let callee_ref = module.declare_func_in_func(calc_add, b.func);
+    let entry = b.create_block();
+    b.switch_to_block(entry);
+    b.seal_block(entry);
+    let one = b.ins().f64const(1.0);
+    let two = b.ins().f64const(2.0);
+    let call = b.ins().call(callee_ref, &[one, two]);
+    let result = b.inst_results(call)[0];
+    b.ins().return_(&[result]);
+    b.finalize(module.isa().frontend_config());
+
+    let clif = ctx.func.display().to_string();
+    println!("{clif}");
+    module.define_function(caller, &mut ctx).unwrap();
+    assert!(clif.contains("call fn0(v0, v1)"));
+
+    // The object file lists `calc_add` as undefined (no code for it here).
+    let bytes = module.finish().object.write().unwrap();
+    assert!(bytes.windows(8).any(|w| w == b"calc_add"));
+}

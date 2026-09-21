@@ -1,0 +1,78 @@
+<svg viewBox="0 0 1100 520" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .box { fill: #f2f4f8; stroke: #4b5563; stroke-width: 1.5; }
+      .linker { fill: #e8eefc; stroke: #3b5bdb; stroke-width: 2; }
+      .exe { fill: #e6f6ee; stroke: #15803d; stroke-width: 1.8; }
+      .text { fill: #1f2430; font-size: 13px; }
+      .def { fill: #15803d; font-size: 13px; font-weight: 700; }
+      .undef { fill: #b91c1c; font-size: 13px; font-weight: 700; }
+      .dim { fill: #6b7684; font-size: 12px; }
+      .label { fill: #1f2430; font-size: 14px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .title { fill: #1f2430; font-size: 18px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; text-anchor: middle; }
+      .caption { fill: #4b5563; font-size: 12.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .edge { stroke: #4b5563; stroke-width: 1.6; fill: none; }
+      .resolve { stroke: #b91c1c; stroke-width: 1.8; fill: none; stroke-dasharray: 6 4; }
+      .arrowhead { fill: #4b5563; }
+    </style>
+  </defs>
+  <rect class="bg" width="1100" height="520"/>
+  <text class="title" x="550" y="30">Linking a compiled calc-lang program: undefined symbols get resolved</text>
+
+  <!-- object file -->
+  <rect class="box" x="30" y="70" width="290" height="190" rx="8"/>
+  <text class="label" x="48" y="96">calc_main object file</text>
+  <text class="dim" x="48" y="114">from Cranelift or LLVM (A6/A7)</text>
+  <text class="def" x="48" y="146">T  main</text><text class="text" x="130" y="146">defined here</text>
+  <text class="def" x="48" y="168">T  calc_main</text><text class="text" x="160" y="168">defined here</text>
+  <text class="undef" x="48" y="198">U  calc_add</text><text class="text" x="160" y="198">needed, not here!</text>
+  <text class="undef" x="48" y="220">U  calc_mul</text><text class="text" x="160" y="220">needed, not here!</text>
+  <text class="dim" x="48" y="246">(llvm-nm output; U = undefined)</text>
+
+  <!-- runtime archive -->
+  <rect class="box" x="30" y="300" width="290" height="190" rx="8"/>
+  <text class="label" x="48" y="326">calc_runtime.lib</text>
+  <text class="dim" x="48" y="344">static library built by build.rs (A9)</text>
+  <text class="def" x="48" y="376">T  calc_add</text><text class="text" x="160" y="376">addsd; ret</text>
+  <text class="def" x="48" y="398">T  calc_mul</text><text class="text" x="160" y="398">mulsd; ret</text>
+  <text class="dim" x="48" y="424">+ many Rust std members that nothing</text>
+  <text class="dim" x="48" y="442">references: left out of the</text>
+  <text class="dim" x="48" y="460">executable</text>
+
+  <!-- linker -->
+  <rect class="linker" x="430" y="150" width="240" height="220" rx="10"/>
+  <text class="label" x="550" y="182" text-anchor="middle">system linker</text>
+  <text class="dim" x="550" y="200" text-anchor="middle">(link.exe via cl.exe, or cc)</text>
+  <text class="text" x="450" y="234">1. list every undefined symbol</text>
+  <text class="text" x="450" y="258">2. find a member of an input</text>
+  <text class="text" x="450" y="276">   that defines each one</text>
+  <text class="text" x="450" y="300">3. copy only those members in</text>
+  <text class="text" x="450" y="324">4. patch each call site with</text>
+  <text class="text" x="450" y="342">   the final address (relocation)</text>
+
+  <!-- arrows in -->
+  <path class="edge" d="M320,200 L430,200" marker-end="url(#arrow)"/>
+  <path class="edge" d="M320,320 L430,320" marker-end="url(#arrow)"/>
+  <path class="resolve" d="M175,260 L175,300" marker-end="url(#arrow)"/>
+  <text class="caption" x="185" y="285">match</text>
+
+  <!-- exe -->
+  <path class="edge" d="M670,260 L780,260" marker-end="url(#arrow)"/>
+  <rect class="exe" x="790" y="150" width="280" height="220" rx="8"/>
+  <text class="label" x="810" y="180">program.exe</text>
+  <text class="def" x="810" y="214">T  main</text>
+  <text class="def" x="810" y="236">T  calc_main</text>
+  <text class="def" x="810" y="258">T  calc_add</text><text class="dim" x="925" y="258">copied in</text>
+  <text class="def" x="810" y="280">T  calc_mul</text><text class="dim" x="925" y="280">copied in</text>
+  <text class="dim" x="810" y="312">+ C runtime start-up (libcmt etc.)</text>
+  <text class="dim" x="810" y="334">no undefined symbols left: runnable</text>
+
+  <text class="caption" x="430" y="420">If a symbol is still undefined after step 2 the link fails:</text>
+  <text class="undef" x="430" y="442">error LNK2019: unresolved external symbol calc_add</text>
+  <text class="caption" x="430" y="470">(what you get if the runtime library is left off the link line)</text>
+  <text class="caption" x="430" y="496">Dashed red: the linker matches each U (undefined) with a T (defined) elsewhere.</text>
+</svg>

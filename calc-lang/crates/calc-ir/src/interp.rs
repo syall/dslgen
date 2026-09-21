@@ -86,6 +86,17 @@ fn exec_instr(instr: &Instr, store: &mut TempStore) {
             };
             store.write(*dst, Value::Number(result));
         }
+        Instr::CallBuiltin { dst, name, args } => {
+            let builtin = calc_runtime::lookup(name)
+                .unwrap_or_else(|| panic!("calc_ir::interp: unknown built-in `{name}`"));
+            let args: Vec<f64> = args.iter().map(|a| store.read(*a).as_number()).collect();
+            assert_eq!(
+                args.len(),
+                builtin.arity,
+                "built-in `{name}` arity mismatch"
+            );
+            store.write(*dst, Value::Number((builtin.eval)(&args)));
+        }
         Instr::Copy { dst, src } => {
             let value = store.read(*src);
             store.write(*dst, value);

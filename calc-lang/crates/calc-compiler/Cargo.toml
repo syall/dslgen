@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 calc-syntax = { path = "../calc-syntax" }
 calc-ir = { path = "../calc-ir" }
+calc-runtime = { path = "../calc-runtime" }
 cranelift-codegen = { version = "0.135.2", optional = true }
 cranelift-frontend = { version = "0.135.2", optional = true }
 cranelift-module = { version = "0.135.2", optional = true }

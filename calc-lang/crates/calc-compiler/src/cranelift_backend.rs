@@ -29,7 +29,8 @@ type VarMap = HashMap<Temp, Variable>;
 /// `calc_ir::interp`'s `Value::Number(f64)` result), plus a small C-ABI `main() ->
 /// i32` entry point that calls it and returns the result as the process's exit code
 /// — see `DECISIONS.md`'s A6 entry for why an exit code stands in for real output
-/// before A9's built-ins (and A12's link driver) exist.
+/// (calc-lang has no I/O, and A9's built-ins are pure `f64` functions that don't
+/// print, so that hasn't changed).
 pub fn compile_to_object(program: &Program) -> Vec<u8> {
     let mut module = new_object_module();
 
@@ -62,7 +63,12 @@ fn new_object_module() -> ObjectModule {
     let isa_builder =
         cranelift_native::builder().expect("host architecture is supported by cranelift-native");
     let mut flag_builder = settings::builder();
-    flag_builder.set("is_pic", "false").expect("valid setting");
+    // Position-independent code (A9): a built-in call needs the callee's address, and
+    // with `is_pic=false` Cranelift writes that address into the code itself, which
+    // forces the loader to patch the code of a PIE executable (linker warning
+    // `creating DT_TEXTREL in a PIE` on Linux). With `is_pic=true` it reads the address
+    // from a linker-filled table instead. See docs/a9-native-rust-builtins.md.
+    flag_builder.set("is_pic", "true").expect("valid setting");
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
         .expect("host ISA settings are valid");
@@ -113,7 +119,7 @@ fn define_calc_main(module: &mut ObjectModule, func_id: FuncId, program: &Progra
             .or_insert_with(|| builder.declare_var(types::F64));
     }
 
-    lower_block(&program.body, &mut builder, &vars);
+    lower_block(&program.body, module, &mut builder, &vars);
     let result = builder.use_var(vars[&program.result]);
     builder.ins().return_(&[result]);
 
@@ -181,6 +187,7 @@ fn collect_block_temps(block: &IrBlock, temps: &mut Vec<Temp>) {
         match instr {
             Instr::Const { dst, .. } => temps.push(*dst),
             Instr::BinOp { dst, .. } => temps.push(*dst),
+            Instr::CallBuiltin { dst, .. } => temps.push(*dst),
             Instr::Copy { dst, .. } => temps.push(*dst),
             Instr::If {
                 dst,
@@ -196,13 +203,23 @@ fn collect_block_temps(block: &IrBlock, temps: &mut Vec<Temp>) {
     }
 }
 
-fn lower_block(block: &IrBlock, builder: &mut FunctionBuilder, vars: &VarMap) {
+fn lower_block(
+    block: &IrBlock,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+    vars: &VarMap,
+) {
     for instr in &block.0 {
-        lower_instr(instr, builder, vars);
+        lower_instr(instr, module, builder, vars);
     }
 }
 
-fn lower_instr(instr: &Instr, builder: &mut FunctionBuilder, vars: &VarMap) {
+fn lower_instr(
+    instr: &Instr,
+    module: &mut ObjectModule,
+    builder: &mut FunctionBuilder,
+    vars: &VarMap,
+) {
     match instr {
         Instr::Const { dst, value } => {
             let v = builder.ins().f64const(*value);
@@ -217,6 +234,31 @@ fn lower_instr(instr: &Instr, builder: &mut FunctionBuilder, vars: &VarMap) {
                 calc_ir::BinOp::Mul => builder.ins().fmul(lhs, rhs),
                 calc_ir::BinOp::Div => builder.ins().fdiv(lhs, rhs),
             };
+            builder.def_var(vars[dst], result);
+        }
+        Instr::CallBuiltin { dst, name, args } => {
+            // The callee has no body in this object file: it is declared as an
+            // `Import`, leaving an undefined symbol for the linker to fill in from
+            // the runtime library (spec.md §7; docs/a9-native-rust-builtins.md).
+            //
+            // `declare_func_in_func` imports a fresh signature and function reference
+            // on every call, so a program using `+` three times shows three identical
+            // `fnN = u0:1 sigN` entries in the CLIF. That's harmless (the object file
+            // still has one undefined symbol, plus one relocation per call site), and
+            // Cranelift itself lists coalescing them as a TODO, so it isn't cached here.
+            let builtin =
+                calc_runtime::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
+            let mut sig = Signature::new(module.isa().default_call_conv());
+            sig.params
+                .extend(vec![AbiParam::new(types::F64); builtin.arity]);
+            sig.returns.push(AbiParam::new(types::F64));
+            let callee = module
+                .declare_function(builtin.symbol, Linkage::Import, &sig)
+                .expect("built-in symbol is declared consistently");
+            let callee = module.declare_func_in_func(callee, builder.func);
+            let call_args: Vec<_> = args.iter().map(|a| builder.use_var(vars[a])).collect();
+            let call = builder.ins().call(callee, &call_args);
+            let result = builder.inst_results(call)[0];
             builder.def_var(vars[dst], result);
         }
         Instr::Copy { dst, src } => {
@@ -246,12 +288,12 @@ fn lower_instr(instr: &Instr, builder: &mut FunctionBuilder, vars: &VarMap) {
 
             builder.switch_to_block(then_blk);
             builder.seal_block(then_blk);
-            lower_block(then_block, builder, vars);
+            lower_block(then_block, module, builder, vars);
             builder.ins().jump(merge_blk, &[]);
 
             builder.switch_to_block(else_blk);
             builder.seal_block(else_blk);
-            lower_block(else_block, builder, vars);
+            lower_block(else_block, module, builder, vars);
             builder.ins().jump(merge_blk, &[]);
 
             builder.switch_to_block(merge_blk);
@@ -323,5 +365,11 @@ mod tests {
     #[test]
     fn compiles_and_runs_a_let_bound_if_expression() {
         assert_matches_interpreter("{ let x = 1; if x { x + 1 } else { 2 } }", "let_bound_if");
+    }
+
+    /// `+` and `*` compile to calls of the `add`/`mul` built-ins (A9); `-` stays inline.
+    #[test]
+    fn compiles_and_runs_builtin_calls_mixed_with_inline_ops() {
+        assert_matches_interpreter("(1 + 2) * 4 - 3", "builtins_mixed");
     }
 }

@@ -222,3 +222,54 @@ only checked when its feature is on, so each promised combination must be built 
 and a failure should name the combination. The three feature combinations were verified locally against a real
 LLVM 21.1.1 install. That did not catch the libc++/libstdc++ link failure above, which is
 specific to Linux; the apt.llvm.org setup is likewise only confirmed by its CI run.
+
+## A9 — Operators lower to built-in calls; runtime library built by `build.rs`
+
+**No call syntax; `+` and `*` are the built-ins' surface.** Roadmap A9 asks for `add`/`mul`
+"callable from a `.calc` program", but calc-lang has no call syntax and the generic `dslgen`
+(not calc-lang) is where call syntax belongs. Alternatives: (a) add `name(args)` to the grammar,
+AST, resolver and lowering; (b) route the existing operators to the built-ins in lowering.
+Chose (b): no grammar/AST/resolve change, and every existing program exercises the built-ins
+through the interpreter and both backends. The machinery is deliberately call-shaped and
+operator-agnostic — `Instr::CallBuiltin { dst, name, args: Vec<Temp> }`, a manifest keyed by name
+and arity — so a future call-syntax frontend emits the same node; only `builtin_for` in
+`ast_to_ir.rs` is calc-lang-specific. `-` and `/` have no built-in and stay inline `BinOp`s.
+Cost, accepted: `+`/`*` are no longer inlined or constant-folded (LLVM `-O2` leaves both calls),
+which is a real slowdown for arithmetic but irrelevant to the point of the session.
+
+**One manifest, one crate.** `calc-runtime` holds the `#[no_mangle] extern "C"` functions and a
+hardcoded `BUILTINS` table (name, linker symbol, arity, interpreter `eval`), so the interpreter
+and compiled code share one implementation. The data-driven `bindings.toml` is Part B. The IR
+node stores the built-in's *name* (a `String`), not a table reference, so `Instr` keeps its
+`Clone`/`PartialEq` derives; backends and interpreter `lookup` it.
+
+**Getting the functions into the executable.** Alternatives: (a) make `calc-runtime` a
+`staticlib` crate and locate the artifact next to the `calcc` binary — Cargo doesn't build
+staticlibs of plain dependencies, so `cargo test -p calc-compiler` would miss it;
+(b) embed the runtime's source and run `rustc` at `calcc build` time — needs `rustc` on the
+user's machine at every build; (c) `calc-compiler/build.rs` runs `rustc --crate-type=staticlib`
+on `calc-runtime/src/lib.rs` and bakes the archive's path in via `cargo:rustc-env`. Chose (c):
+works from every `cargo` entry point. Consequences: `calc-runtime/src/lib.rs` must stay
+dependency-free (built by bare `rustc`); `calcc` only works while its build tree exists (the
+archive is ~12 MB and not embedded); `link_stub` always passes the archive (the linker pulls
+only members it needs). On MSVC the archive links with the existing CRT libraries and needed no
+extra system libraries, so the planned `no_std` fallback wasn't required. A12's real link driver
+replaces this.
+
+**Position-independent code (`is_pic=true`).** The first Linux CI run linked fine but warned
+`relocation against calc_add in read-only section .text` / `creating DT_TEXTREL in a PIE` for
+Cranelift-built programs: with `is_pic=false` (A6's setting) each built-in call embeds the
+callee's absolute address in the code (`movabsq` + `R_X86_64_64`), which a PIE executable's
+loader must patch at run time. Alternatives: (a) link with `-no-pie` — drops ASLR for every
+produced program, and the LLVM backend's objects didn't need it; (b) mark the callee `colocated`
+so Cranelift emits a direct relative call — a bigger machine-code change, and assumes the runtime
+is always statically linked, which A10 (dynamic loading is an option) may not guarantee;
+(c) `is_pic=true` — one setting; the address is read from a linker-filled slot (GOT on Linux,
+`.refptr.*` stub on Windows) so the code holds no absolute address. Chose (c): the smallest change
+that works however the runtime is linked. Cost: one extra load per call; the call stays indirect.
+A6's Recipe 4 listing and the `new_object_module` copy in `tests/cranelift_recipes.rs` still show
+`is_pic=false` and were left unchanged (they describe A6's function; the recipes never link).
+
+**Deliberately not done**: user-defined functions, call syntax, built-ins with a non-`f64`
+signature, validating a manifest entry's signature against the symbol (spec.md §7's
+generation-time check; Part B).

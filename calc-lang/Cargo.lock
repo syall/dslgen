@@ -82,6 +82,7 @@ name = "calc-compiler"
 version = "0.1.0"
 dependencies = [
  "calc-ir",
+ "calc-runtime",
  "calc-syntax",
  "cc",
  "cranelift-codegen",
@@ -97,6 +98,7 @@ dependencies = [
 name = "calc-ir"
 version = "0.1.0"
 dependencies = [
+ "calc-runtime",
  "calc-syntax",
 ]
 
@@ -106,6 +108,10 @@ version = "0.1.0"
 dependencies = [
  "calc-syntax",
 ]
+
+[[package]]
+name = "calc-runtime"
+version = "0.1.0"
 
 [[package]]
 name = "calc-syntax"

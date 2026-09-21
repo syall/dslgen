@@ -101,7 +101,7 @@ fn build_module<'ctx>(context: &'ctx Context, program: &Program) -> Module<'ctx>
 
     let f64_ty = context.f64_type();
     let calc_main = module.add_function("calc_main", f64_ty.fn_type(&[], false), None);
-    define_calc_main(context, &builder, calc_main, program);
+    define_calc_main(context, &module, &builder, calc_main, program);
 
     let main = module.add_function("main", context.i32_type().fn_type(&[], false), None);
     define_c_main(context, &module, &builder, main, calc_main);
@@ -115,6 +115,7 @@ fn build_module<'ctx>(context: &'ctx Context, program: &Program) -> Module<'ctx>
 
 fn define_calc_main<'ctx>(
     context: &'ctx Context,
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     func: FunctionValue<'ctx>,
     program: &Program,
@@ -123,7 +124,7 @@ fn define_calc_main<'ctx>(
     builder.position_at_end(entry);
 
     let mut values = Values::new();
-    lower_block(context, builder, func, &program.body, &mut values);
+    lower_block(context, module, builder, func, &program.body, &mut values);
     builder
         .build_return(Some(&values[&program.result]))
         .expect("builder is positioned in a block");
@@ -131,18 +132,20 @@ fn define_calc_main<'ctx>(
 
 fn lower_block<'ctx>(
     context: &'ctx Context,
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     func: FunctionValue<'ctx>,
     block: &IrBlock,
     values: &mut Values<'ctx>,
 ) {
     for instr in &block.0 {
-        lower_instr(context, builder, func, instr, values);
+        lower_instr(context, module, builder, func, instr, values);
     }
 }
 
 fn lower_instr<'ctx>(
     context: &'ctx Context,
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     func: FunctionValue<'ctx>,
     instr: &Instr,
@@ -162,6 +165,24 @@ fn lower_instr<'ctx>(
                 calc_ir::BinOp::Div => builder.build_float_div(lhs, rhs, "div"),
             }
             .expect("builder is positioned in a block");
+            values.insert(*dst, result);
+        }
+        Instr::CallBuiltin { dst, name, args } => {
+            // Declaring (not defining) the function leaves an undefined symbol for the
+            // linker to resolve from the runtime library (spec.md §7).
+            let builtin =
+                calc_runtime::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
+            let callee = module.get_function(builtin.symbol).unwrap_or_else(|| {
+                let params = vec![f64_ty.into(); builtin.arity];
+                module.add_function(builtin.symbol, f64_ty.fn_type(&params, false), None)
+            });
+            let call_args: Vec<_> = args.iter().map(|a| values[a].into()).collect();
+            let result = builder
+                .build_call(callee, &call_args, builtin.name)
+                .expect("builder is positioned in a block")
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_float_value();
             values.insert(*dst, result);
         }
         Instr::Copy { dst, src } => {
@@ -197,7 +218,7 @@ fn lower_instr<'ctx>(
             let branch_value = |blk, ir_block: &IrBlock| {
                 builder.position_at_end(blk);
                 let mut branch_values = values.clone();
-                lower_block(context, builder, func, ir_block, &mut branch_values);
+                lower_block(context, module, builder, func, ir_block, &mut branch_values);
                 builder
                     .build_unconditional_branch(merge_blk)
                     .expect("builder is positioned in a block");
@@ -324,6 +345,12 @@ mod tests {
             "{ let x = 1; if x { x + 1 } else { 2 } }",
             "let_bound_if",
         );
+    }
+
+    /// `+` and `*` compile to calls of the `add`/`mul` built-ins (A9); `-` stays inline.
+    #[test]
+    fn compiles_and_runs_builtin_calls_mixed_with_inline_ops() {
+        assert_matches_interpreter_and_cranelift("(1 + 2) * 4 - 3", "builtins_mixed");
     }
 
     /// The nested `if` moves the insertion point into an inner merge block, so the
