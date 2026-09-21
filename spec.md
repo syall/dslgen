@@ -401,19 +401,19 @@ kinds**:
 - Concretely (illustrative `bindings.toml` shape, not a final format):
   ```
   [[builtin]]
-  name = "format_currency"
-  signature = "(f64) -> string"
+  name = "print"
+  signature = "(f64) -> f64"   # prints a formatted line, returns its argument
 
     [[builtin.impl]]
     target = "default"
     kind = "subprocess"
     command = "python3"
-    args = ["format_currency.py"]
+    args = ["print.py"]
 
     [[builtin.impl]]
     target = "wasm32-*"
     kind = "ffi"          # on a wasm target, "ffi" means an imported host function
-    js_import = "formatCurrency"
+    js_import = "print"   # e.g. wraps console.log
   ```
 - This is precisely what makes the example the user raised concrete: a DSL compiled
   normally might back a built-in with native Rust or a subprocess, while the same DSL
@@ -446,9 +446,9 @@ kinds**:
   1. `bindings.toml` (§7.1) supplies the default location per target.
   2. A local override file (working name `calcc.toml`, read from the working
      directory or a `--config` path) can override specific built-ins' locations,
-     e.g. `[builtin.format_currency] command = "/opt/python3.11/bin/python3"`.
+     e.g. `[builtin.print] command = "/opt/python3.11/bin/python3"`.
   3. CLI flags on `calcc build`/`calcc run` (e.g.
-     `--builtin-path format_currency.command=/opt/python3.11/bin/python3`) override
+     `--builtin-path print.command=/opt/python3.11/bin/python3`) override
      both, for one-off/CI use without a persistent config file.
   - Precedence: CLI flag > local override file > `bindings.toml` default for the
     selected target.
@@ -702,14 +702,14 @@ kinds**:
    tagging its `if`/`else` construct with `#[control_flow(if)]`, its variable-name
    token with `#[identifier]`, and its reserved words with `#[keyword(...)]`.
 2. Author writes semantic actions building an `Expr` AST/IR, and declares built-ins
-   `add`/`mul` (native Rust) and `format_currency` (a Python subprocess built-in) in
+   `add`/`mul` (native Rust) and `print` (a Python subprocess built-in) in
    `bindings.toml`.
 3. `dslgen build --backends=llvm,cranelift` validates everything and generates the
    workspace, producing `calcc` (with both backends compiled in) and `calc-lsp`.
 4. `calcc build --backend=cranelift hello.calc -o hello` compiles a program into a
    native executable for fast local iteration; `calcc build --backend=llvm hello.calc
    -o hello-release` produces a more heavily optimized build for shipping. Because
-   `hello.calc` uses `format_currency`, both binaries embed the IPC runtime shim and
+   `hello.calc` uses `print`, both binaries embed the IPC runtime shim and
    need `python3` on `PATH` at run time for that specific call.
 5. `./hello` / `./hello-release` run directly — no dependency on `calcc`/`dslgen`.
 6. While editing `hello.calc`, the author's editor launches `calc-lsp`, which

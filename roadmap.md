@@ -259,8 +259,10 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   tradeoff and its cost (external runtime dependency at run time — §3); spawn-per-call
   process lifecycle as the simplest starting design (long-lived worker deferred to
   Part C).
-- **Deliverable**: `src/ipc_runtime.rs` shim; a `format_currency` built-in backed by a
-  small `python3` script, callable from a `.calc` program and producing correct output.
+- **Deliverable**: `src/ipc_runtime.rs` shim; a `print` built-in backed by a
+  small `python3` script that prints its numeric argument using an f-string (e.g.
+  `print(f"result = {x:.2f}")`) and returns it unchanged, callable from a `.calc`
+  program and producing correct output (calc-lang's first real output, beyond the exit code).
 
 ### A12. The link driver
 
