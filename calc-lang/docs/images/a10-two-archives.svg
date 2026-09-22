@@ -1,0 +1,88 @@
+<svg viewBox="0 0 1100 590" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, SFMono-Regular, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .cbox { fill: #fdf1e7; stroke: #b45309; stroke-width: 1.8; }
+      .buildbox { fill: #e8eefc; stroke: #3b5bdb; stroke-width: 1.8; }
+      .archive { fill: #f2f4f8; stroke: #4b5563; stroke-width: 1.5; }
+      .consumer { fill: #e6f6ee; stroke: #15803d; stroke-width: 1.6; }
+      .text { fill: #1f2430; font-size: 12.5px; }
+      .label { fill: #1f2430; font-size: 13.5px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .title { fill: #1f2430; font-size: 18px; font-weight: 700; font-family: -apple-system, Helvetica, Arial, sans-serif; text-anchor: middle; }
+      .caption { fill: #4b5563; font-size: 12.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .dim { fill: #6b7684; font-size: 11.5px; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+      .edge { stroke: #4b5563; stroke-width: 1.6; fill: none; }
+      .edge-top { stroke: #3b5bdb; stroke-width: 1.6; fill: none; }
+      .edge-bot { stroke: #b45309; stroke-width: 1.6; fill: none; }
+      .arrowhead { fill: #4b5563; }
+    </style>
+  </defs>
+  <rect class="bg" width="1100" height="590"/>
+  <text class="title" x="550" y="28">One C source, compiled twice, for two different consumers</text>
+
+  <!-- source -->
+  <rect class="cbox" x="30" y="240" width="260" height="90" rx="8"/>
+  <text class="label" x="48" y="265">calc-runtime/native/calc_ffi.c</text>
+  <text class="text" x="48" y="288">double calc_sub(a, b)</text>
+  <text class="text" x="48" y="306">  { return a - b; }</text>
+
+  <!-- top path: calc-runtime's own build -->
+  <rect class="buildbox" x="360" y="80" width="300" height="80" rx="8"/>
+  <text class="label" x="375" y="105">calc-runtime/build.rs</text>
+  <text class="text" x="375" y="128">cc::Build::compile("calc_ffi")</text>
+  <text class="dim" x="375" y="146">emits cargo:rustc-link-lib=calc_ffi</text>
+
+  <rect class="archive" x="730" y="80" width="180" height="80" rx="8"/>
+  <text class="label" x="745" y="108" font-size="12.5">"calc_ffi" archive</text>
+  <text class="dim" x="745" y="129">in calc-runtime&#8217;s</text>
+  <text class="dim" x="745" y="145">own OUT_DIR</text>
+
+  <rect class="consumer" x="960" y="70" width="110" height="100" rx="8"/>
+  <text class="label" x="975" y="95" font-size="12.5">calcc,</text>
+  <text class="label" x="975" y="113" font-size="12.5">every crate&#8217;s</text>
+  <text class="label" x="975" y="131" font-size="12.5">tests, the</text>
+  <text class="label" x="975" y="149" font-size="12.5">interpreter</text>
+
+  <text class="dim" x="480" y="185" text-anchor="middle">propagated automatically by Cargo</text>
+  <text class="dim" x="480" y="200" text-anchor="middle">to every ordinary dependent binary</text>
+
+  <!-- bottom path: calc-compiler's own build -->
+  <rect class="buildbox" x="360" y="400" width="300" height="90" rx="8"/>
+  <text class="label" x="375" y="425">calc-compiler/build.rs</text>
+  <text class="text" x="375" y="448">cc::Build::compile(</text>
+  <text class="text" x="375" y="464">  "calc_compiler_calc_ffi")</text>
+  <text class="dim" x="375" y="480">exposes CALC_FFI_LIB=&#8230;.lib</text>
+
+  <rect class="archive" x="730" y="400" width="180" height="90" rx="8"/>
+  <text class="label" x="745" y="425" font-size="12.5">"calc_compiler_</text>
+  <text class="label" x="745" y="441" font-size="12.5">calc_ffi" archive</text>
+  <text class="dim" x="745" y="461">a distinct name —</text>
+  <text class="dim" x="745" y="476">see caption below</text>
+
+  <rect class="consumer" x="960" y="395" width="110" height="100" rx="8"/>
+  <text class="label" x="975" y="420" font-size="12.5">link_stub.rs,</text>
+  <text class="label" x="975" y="438" font-size="12.5">linking the</text>
+  <text class="label" x="975" y="456" font-size="12.5">generated</text>
+  <text class="label" x="975" y="474" font-size="12.5">.calc program</text>
+
+  <text class="dim" x="480" y="512" text-anchor="middle">a plain file path, handed to</text>
+  <text class="dim" x="480" y="527" text-anchor="middle">a non-Cargo, raw linker call</text>
+
+  <!-- arrows from source to both build scripts -->
+  <path class="edge-top" d="M290,265 L360,140" marker-end="url(#arrow)"/>
+  <path class="edge-bot" d="M290,305 L360,445" marker-end="url(#arrow)"/>
+
+  <!-- build -> archive -->
+  <path class="edge" d="M660,120 L730,120" marker-end="url(#arrow)"/>
+  <path class="edge" d="M660,445 L730,445" marker-end="url(#arrow)"/>
+
+  <!-- archive -> consumer -->
+  <path class="edge" d="M910,120 L960,120" marker-end="url(#arrow)"/>
+  <path class="edge" d="M910,445 L960,445" marker-end="url(#arrow)"/>
+
+  <text class="caption" x="550" y="555" text-anchor="middle">Named differently on purpose: calcc&#8217;s own link must never see two static</text>
+  <text class="caption" x="550" y="570" text-anchor="middle">libraries both offering a definition of calc_sub.</text>
+</svg>

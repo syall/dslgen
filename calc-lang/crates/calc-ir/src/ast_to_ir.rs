@@ -20,14 +20,16 @@ pub fn lower(expr: &Expr) -> Program {
     }
 }
 
-/// calc-lang's only "call syntax" is its operators: `+` and `*` are implemented by the
-/// `add`/`mul` built-ins (spec.md §7, session A9), so they lower to `CallBuiltin`.
-/// `-` and `/` have no built-in yet and stay inline `BinOp`s.
+/// calc-lang's only "call syntax" is its operators: `+`, `*`, and `-` are implemented
+/// by the `add`/`mul` (spec.md §7 kind 1, session A9) and `sub` (kind 2, session A10)
+/// built-ins, so they lower to `CallBuiltin`. `/` has no built-in yet and stays an
+/// inline `BinOp`.
 fn builtin_for(op: BinOp) -> Option<&'static str> {
     match op {
         BinOp::Add => Some("add"),
         BinOp::Mul => Some("mul"),
-        BinOp::Sub | BinOp::Div => None,
+        BinOp::Sub => Some("sub"),
+        BinOp::Div => None,
     }
 }
 
@@ -186,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn plus_and_times_lower_to_builtin_calls_but_minus_and_divide_stay_inline() {
+    fn plus_times_and_minus_lower_to_builtin_calls_but_divide_stays_inline() {
         let ast = LalrpopFrontend
             .parse("(1 + 2) * 3 - 4 / 5")
             .expect("should parse");
@@ -208,8 +210,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(call_names, ["add", "mul"]);
-        assert_eq!(inline_ops, [BinOp::Div, BinOp::Sub]);
+        assert_eq!(call_names, ["add", "mul", "sub"]);
+        assert_eq!(inline_ops, [BinOp::Div]);
     }
 
     /// Names an instruction's variant. The `match` has no wildcard arm, so adding a new
@@ -242,11 +244,11 @@ mod tests {
 
     /// One program that lowers to every `Instr` variant: `Const` (the literals), `If` with
     /// its two `Copy`s (the branches' shared result), `CallBuiltin` (`+`) and inline
-    /// `BinOp` (`-`).
+    /// `BinOp` (`/`, the only operator with no built-in as of session A10).
     #[test]
     fn lowering_emits_every_kind_of_instruction() {
         let ast = LalrpopFrontend
-            .parse("if 1 { 2 + 3 } else { 4 - 5 }")
+            .parse("if 1 { 2 + 3 } else { 4 / 5 }")
             .expect("should parse");
         let mut kinds = std::collections::BTreeSet::new();
         collect_kinds(&lower(&ast).body, &mut kinds);

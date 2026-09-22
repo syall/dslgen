@@ -26,6 +26,11 @@ use std::process::Command;
 /// programs that use no built-ins are unaffected.
 const RUNTIME_LIB: &str = env!("CALC_RUNTIME_LIB");
 
+/// Path to the C-ABI FFI built-ins' static library (`calc_sub`; session A10), built by
+/// `build.rs` from `calc-runtime/native/calc_ffi.c`. Always passed alongside
+/// `RUNTIME_LIB`, for the same reason: unused archive members cost nothing.
+const FFI_LIB: &str = env!("CALC_FFI_LIB");
+
 /// Links `object_bytes` (as produced by `cranelift_backend::compile_to_object`)
 /// into a runnable executable, invoking the system's C toolchain purely as a
 /// linker driver (MSVC's `cl.exe` or a Unix-style `cc`/`gcc`/`clang`) — the object
@@ -82,10 +87,12 @@ pub fn link(object_bytes: &[u8], output_path: &Path) -> io::Result<PathBuf> {
             .arg("libvcruntime.lib")
             .arg("libucrt.lib")
             .arg(RUNTIME_LIB)
+            .arg(FFI_LIB)
             .arg(format!("/Fe:{}", exe_path.display()));
     } else {
         cmd.arg(&object_path)
             .arg(RUNTIME_LIB)
+            .arg(FFI_LIB)
             .arg("-o")
             .arg(&exe_path);
     }
@@ -117,7 +124,7 @@ mod tests {
     use calc_syntax::lalrpop_frontend::LalrpopFrontend;
     use calc_syntax::{resolve, ParserFrontend};
 
-    use super::{link, RUNTIME_LIB};
+    use super::{link, FFI_LIB, RUNTIME_LIB};
 
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
@@ -136,6 +143,24 @@ mod tests {
             "calc_runtime.lib"
         } else {
             "libcalc_runtime.a"
+        };
+        assert_eq!(name, expected);
+    }
+
+    /// Same check for the FFI archive (session A10), named `calc_compiler_calc_ffi`
+    /// (not `calc_ffi`) since it's `calc-compiler/build.rs`'s own independent build of
+    /// `calc-runtime/native/calc_ffi.c`, distinct from the archive `calc-runtime`'s own
+    /// `build.rs` links into ordinary Rust consumers.
+    #[test]
+    fn ffi_archive_is_a_static_library_with_the_platform_name() {
+        let bytes = std::fs::read(FFI_LIB).expect("build.rs wrote the archive");
+        assert!(bytes.starts_with(b"!<arch>\n"), "not an ar archive");
+
+        let name = Path::new(FFI_LIB).file_name().unwrap();
+        let expected = if cfg!(target_env = "msvc") {
+            "calc_compiler_calc_ffi.lib"
+        } else {
+            "libcalc_compiler_calc_ffi.a"
         };
         assert_eq!(name, expected);
     }
@@ -199,39 +224,65 @@ mod tests {
         );
     }
 
-    /// The linker matches names literally, so each built-in's `symbol` must be listed in
-    /// the archive's symbol table as exactly that string. A Rust-mangled name like
-    /// `_ZN12calc_runtime8calc_add17h..E` is a different entry, so a missing
-    /// `#[no_mangle]` fails here. macOS prefixes symbols with an underscore. If the
-    /// archive isn't GNU/MSVC-shaped, fall back to searching for the NUL-terminated name.
+    /// Checks that `archive`'s symbol table (or, if it isn't GNU/MSVC-shaped, its raw
+    /// bytes) lists `symbol` under its exact, unmangled name. macOS prefixes symbols
+    /// with an underscore, so that spelling counts too.
+    fn archive_exports(archive: &[u8], symbol: &str) -> bool {
+        let underscored = format!("_{symbol}");
+        match archive_symbols(archive) {
+            Some(symbols) => symbols.iter().any(|s| s == symbol || *s == underscored),
+            None => contains(archive, format!("{symbol}\0").as_bytes()),
+        }
+    }
+
+    /// The linker matches names literally, so each native-Rust built-in's `symbol` must
+    /// be listed in `RUNTIME_LIB`'s symbol table as exactly that string. A Rust-mangled
+    /// name like `_ZN12calc_runtime8calc_add17h..E` is a different entry, so a missing
+    /// `#[no_mangle]` fails here.
     #[test]
-    fn runtime_archive_exports_every_builtin_under_its_unmangled_name() {
+    fn runtime_archive_exports_every_native_rust_builtin_under_its_unmangled_name() {
         let bytes = std::fs::read(RUNTIME_LIB).expect("build.rs wrote the archive");
-        let listed = archive_symbols(&bytes);
         for builtin in calc_runtime::BUILTINS {
-            let underscored = format!("_{}", builtin.symbol);
-            let found = match &listed {
-                Some(symbols) => symbols
-                    .iter()
-                    .any(|s| s == builtin.symbol || *s == underscored),
-                None => contains(&bytes, format!("{}\0", builtin.symbol).as_bytes()),
-            };
+            if builtin.kind != calc_runtime::BindingKind::NativeRust {
+                continue;
+            }
             assert!(
-                found,
+                archive_exports(&bytes, builtin.symbol),
                 "`{}` is not exported by the runtime archive",
                 builtin.symbol
             );
         }
     }
 
-    /// The whole link step on its own, for every backend compiled into this build:
-    /// an object file that leaves `calc_add`/`calc_mul` undefined must link against the
-    /// runtime archive with this platform's linker command line and run correctly.
-    /// (`calcc`'s other tests cover this too, but through codegen; a failure here
-    /// points at linking rather than at a backend.)
+    /// Same check for FFI-kind built-ins (session A10) against `FFI_LIB` instead —
+    /// their `symbol` is defined in `calc-runtime/native/calc_ffi.c`, not in the Rust
+    /// runtime archive.
     #[test]
-    fn links_an_object_that_calls_builtins_from_the_runtime_archive() {
-        let ast = LalrpopFrontend.parse("(1 + 2) * 4").expect("should parse");
+    fn ffi_archive_exports_every_ffi_builtin_under_its_unmangled_name() {
+        let bytes = std::fs::read(FFI_LIB).expect("build.rs wrote the archive");
+        for builtin in calc_runtime::BUILTINS {
+            if builtin.kind != calc_runtime::BindingKind::Ffi {
+                continue;
+            }
+            assert!(
+                archive_exports(&bytes, builtin.symbol),
+                "`{}` is not exported by the FFI archive",
+                builtin.symbol
+            );
+        }
+    }
+
+    /// The whole link step on its own, for every backend compiled into this build: an
+    /// object file that leaves `calc_add`/`calc_mul` (native Rust, `RUNTIME_LIB`) and
+    /// `calc_sub` (C-ABI FFI, `FFI_LIB`; session A10) undefined must link against both
+    /// archives with this platform's linker command line and run correctly. (`calcc`'s
+    /// other tests cover this too, but through codegen; a failure here points at
+    /// linking rather than at a backend.)
+    #[test]
+    fn links_an_object_that_calls_builtins_from_both_archives() {
+        let ast = LalrpopFrontend
+            .parse("(1 + 2) * 4 - 3")
+            .expect("should parse");
         resolve(&ast).expect("should resolve");
         let program = calc_ir::lower(&ast);
 
@@ -241,7 +292,7 @@ mod tests {
             let exe = link(&object, &out).expect("link should succeed");
             let status = Command::new(&exe).status().expect("executable should run");
             let _ = std::fs::remove_file(&exe);
-            assert_eq!(status.code(), Some(12), "{} backend", backend.name());
+            assert_eq!(status.code(), Some(9), "{} backend", backend.name());
         }
     }
 }

@@ -88,9 +88,12 @@ pipeline.
 - `crates/calc-syntax` — parser frontend(s) behind the `ParserFrontend` trait
   (spec.md §5); has a `build.rs` for the LALRPOP grammar.
 - `crates/calc-ir` — typed AST/IR types and lowering.
-- `crates/calc-runtime` — native Rust built-ins (`extern "C"` functions plus the manifest
-  of them), shared by the interpreter and, via a static library `calc-compiler/build.rs`
-  builds, by compiled programs (spec.md §7).
+- `crates/calc-runtime` — the built-in manifest (spec.md §7), plus every kind's real
+  implementation that's expressible in this crate: native-Rust `extern "C"` functions
+  directly in `src/lib.rs` (kind 1), and a tiny bundled C library under `native/`,
+  compiled and linked in by this crate's own `build.rs` (kind 2 — C-ABI FFI). Both are
+  also independently built into static libraries by `calc-compiler/build.rs`, which
+  `link_stub.rs` links into every compiled program.
 - `crates/calc-compiler` — the `calcc` compiler binary, codegen backends.
 - `crates/calc-lsp` — the `calc-lsp` language server binary.
 - `calc-lang/DECISIONS.md` — decision log for choices made while building

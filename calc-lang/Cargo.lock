@@ -112,6 +112,9 @@ dependencies = [
 [[package]]
 name = "calc-runtime"
 version = "0.1.0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "calc-syntax"

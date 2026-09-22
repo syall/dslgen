@@ -273,3 +273,74 @@ A6's Recipe 4 listing and the `new_object_module` copy in `tests/cranelift_recip
 **Deliberately not done**: user-defined functions, call syntax, built-ins with a non-`f64`
 signature, validating a manifest entry's signature against the symbol (spec.md §7's
 generation-time check; Part B).
+
+## A10 — `-` becomes the FFI built-in; `eval` must call the real implementation, never a copy
+
+**`-` is the new built-in's surface.** Same reasoning as A9: calc-lang has no call syntax,
+so `Sub` routes to a `sub` built-in the same way `Add`/`Mul` route to `add`/`mul`. `/`
+(`Div`) is now calc-lang's only remaining inline `BinOp`.
+
+**A design gap, found before it shipped: `eval` must call the real implementation, not a
+rewritten copy of it.** The first draft gave `sub`'s interpreter `eval` a hand-written
+Rust closure (`|args| args[0] - args[1]`) — a second implementation of subtraction,
+separate from the real `calc_sub` in C. That's exactly the "two implementations can
+disagree" risk `calc-runtime` was created to eliminate for kind 1 (A9: interpreter and
+compiled code call the literal same `calc_add`). Reviewed and rejected before
+implementation, because it's also a dead end for A11: there's no safe way to
+hand-duplicate "spawn python3 and format a string" in pure Rust. Resolved principle,
+expected to hold for every future built-in kind: `eval` always calls the one real
+implementation. Checked against A11 specifically: `print`'s real implementation
+(`ipc_runtime.rs`, spawning `python3`) is plain Rust with no ABI boundary to cross, so
+wiring it into `eval` will be *easier* than this session's FFI case, not harder — no
+build script, no `unsafe`. The only new cost is inherent to IPC itself, not to wiring
+the interpreter to it: `calcc run --interpret` will need `python3` on PATH too, once
+A11 lands.
+
+**`calc-runtime` gains its own `build.rs` — genuinely new work, not a repeat of A9's
+"compile twice" pattern.** In A9, calc-runtime's *ordinary* `cargo build` already
+produces a normal rlib, and `calc-runtime`'s own `eval` closure calls `calc_add` as a
+plain Rust function call — the interpreter itself only ever makes one generic
+`(builtin.eval)(&args)` call, unchanged by kind — no linking step involved, since
+Rust-to-Rust calls within one compilation graph need no special archive. A9's only special build was calc-compiler's manual
+`rustc --crate-type=staticlib` invocation, needed solely to give `link_stub.rs` an
+archive for the *generated program's* separate, non-Cargo link. That "just works
+automatically" path doesn't exist for `calc_sub`: it's C, so even the interpreter,
+running in the same process, can't call it without an actual link step. So
+`calc-runtime/build.rs` (new; the crate's first dependency of any kind, via
+`[build-dependencies] cc`) compiles `native/calc_ffi.c` and lets Cargo auto-link the
+result into every ordinary consumer — the interpreter, this crate's own tests,
+`calc-ir`'s tests, `calcc` itself — so `lib.rs`'s `extern "C" { fn calc_sub(...); }`
+resolves for all of them. `calc-compiler/build.rs` *separately* compiles the same
+source a second time (via `cc` this time, not `rustc`, since a C file is exactly what
+`cc` is for) purely to hand `link_stub.rs` an archive path for the generated program's
+link — this part does mirror A9, for the same reason (a path-addressable archive
+outside Cargo's own linking). The two archives are named differently
+(`calc_ffi` vs. `calc_compiler_calc_ffi`) so `calcc`'s own link never has two
+same-named static libraries both offering `calc_sub` — likely harmless either way, but
+not worth relying on.
+
+**MSVC CRT mismatch, and why the two archives use *different* CRT settings.** The first
+build printed `LNK4098` (defaultlib conflicts) — `cc` defaults to MSVC's dynamic CRT,
+while `link_stub.rs` explicitly links the static CRT (`libcmt.lib` and friends) for the
+generated program. Setting `.static_crt(true)` on *calc-runtime's* build fixed that link
+but broke the other one: ordinary Rust binaries (`calcc`, every crate's test harness)
+use rustc's own default (dynamic) CRT on `*-msvc`, so forcing static CRT there conflicts
+instead, and — because a modern rustc surfaces linker warnings as the `linker_messages`
+lint — `cargo clippy --all-targets -- -D warnings` would have turned that into a hard
+error. Fix: `.static_crt(true)` only on *calc-compiler's* independent build (which feeds
+`link_stub.rs`'s explicitly-static link), left at `cc`'s default on *calc-runtime's* own
+build (which feeds ordinary Cargo-linked binaries). Two archives from the same source,
+each matching its one consumer's CRT policy.
+
+**Kind 2 needs zero new external dependencies.** A system C toolchain, needed to compile
+`calc_ffi.c`, is a *build-time-only* requirement — nothing at run time, since it's
+statically linked — and not even a new assumption: `link_stub.rs` has required a system
+C toolchain since A6, via the same `cc::Build::get_compiler()` call it already makes to
+find a linker.
+
+**Deliberately not done**: enumerating/declaring a built-in's external dependency (e.g.
+A11's eventual `python3` requirement) anywhere in the manifest — nothing would read such
+a field yet, and spec.md §7.2's override layer (`bindings.toml` → `calcc.toml` → CLI
+flag) is only meaningful once `bindings.toml` (Part B, B6) is real data. Also unchanged
+from A9: call syntax, a data-driven manifest, signature validation, dynamic (vs. static)
+FFI linking, the real link driver (A12).

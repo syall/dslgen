@@ -367,9 +367,10 @@ mod tests {
         assert_matches_interpreter("{ let x = 1; if x { x + 1 } else { 2 } }", "let_bound_if");
     }
 
-    /// `+` and `*` compile to calls of the `add`/`mul` built-ins (A9); `-` stays inline.
+    /// `+`, `*`, and `-` compile to calls of the `add`/`mul`/`sub` built-ins (A9/A10);
+    /// `/` is calc-lang's only remaining inline operator.
     #[test]
     fn compiles_and_runs_builtin_calls_mixed_with_inline_ops() {
-        assert_matches_interpreter("(1 + 2) * 4 - 3", "builtins_mixed");
+        assert_matches_interpreter("(1 + 2) * 4 - 6 / 2", "builtins_mixed");
     }
 }

@@ -21,6 +21,9 @@ target-lexicon = "0.13.5"
 cc = "1.4.6"
 inkwell = { version = "0.10", default-features = false, features = ["llvm21-1", "target-x86"], optional = true }
 
+[build-dependencies]
+cc = "1.4.6"
+
 # Each codegen backend is a Cargo feature (spec.md §8.1), so a build pulls in only the
 # backends it asks for. Cranelift is pure Rust and on by default (spec.md §14 #4, see
 # DECISIONS.md's A8 entry); LLVM is a huge external C++ dependency, so it's opt-in:

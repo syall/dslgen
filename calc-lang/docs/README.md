@@ -59,4 +59,13 @@ Read in order:
     LLVM IR and machine code for one program, plus a "call an imported function" recipe for
     each backend; what losing inlining costs.
 
+11. [a10-c-abi-ffi-builtins.md](a10-c-abi-ffi-builtins.md) — built-ins backed by C-ABI
+    FFI: `-` becomes calc-lang's second built-in, backed by a real C file; a design
+    mistake (giving the interpreter a hand-duplicated Rust reimplementation instead of
+    calling the real C function) caught and fixed before it shipped, and the resulting
+    principle that `eval` must always call the one real implementation; why
+    `calc-runtime` needs its own `build.rs` for the first time, unlike anything A9
+    required; two independent builds of the same C source, one per consumer; and a real
+    MSVC linker warning (a static-vs-dynamic CRT mismatch) and how it was actually fixed.
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

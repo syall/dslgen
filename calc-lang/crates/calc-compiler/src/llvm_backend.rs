@@ -347,10 +347,11 @@ mod tests {
         );
     }
 
-    /// `+` and `*` compile to calls of the `add`/`mul` built-ins (A9); `-` stays inline.
+    /// `+`, `*`, and `-` compile to calls of the `add`/`mul`/`sub` built-ins (A9/A10);
+    /// `/` is calc-lang's only remaining inline operator.
     #[test]
     fn compiles_and_runs_builtin_calls_mixed_with_inline_ops() {
-        assert_matches_interpreter_and_cranelift("(1 + 2) * 4 - 3", "builtins_mixed");
+        assert_matches_interpreter_and_cranelift("(1 + 2) * 4 - 6 / 2", "builtins_mixed");
     }
 
     /// The nested `if` moves the insertion point into an inner merge block, so the
