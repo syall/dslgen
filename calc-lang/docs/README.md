@@ -88,4 +88,21 @@ Read in order:
     Windows-specific gotcha (a non-functional `python3` "app execution alias") and its
     fallback fix.
 
+13. [a12-the-link-driver.md](a12-the-link-driver.md) — the link driver: what a linker
+    actually does between "object file exists" and "executable exists" (undefined
+    symbols, archive members and symbol tables, C runtime startup code, system
+    libraries); one dependency story for all three built-in kinds — each built-in's
+    symbol comes from a *link unit* (an archive plus an explicit list of what it
+    needs), rustc-derived for Rust and manifest-declared for FFI, with run-time needs
+    like Python declared too — and how to swap in your own implementation of each;
+    the manifest split into its own data-only crate, and a nested Cargo build that
+    replaces the bare `rustc` call so built-ins may use real crates again (proved by
+    moving `print` to a `serde_json` protocol); a pre-link check that reads archive
+    symbol tables to catch missing or duplicated symbols by built-in name; why link
+    order matters for single-pass linkers; IPC built-ins in any language and bigger
+    than one file — one command per platform checked at build time, and a bundle of
+    files embedded in the executable as a linker-generated data object, unpacked to a
+    per-user cache on first run; and which platforms are tested, supported by
+    construction, or deferred (with before/after architecture diagrams).
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

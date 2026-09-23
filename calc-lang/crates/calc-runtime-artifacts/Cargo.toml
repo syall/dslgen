@@ -1,0 +1,12 @@
+[package]
+name = "calc-runtime-artifacts"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+# A normal (not build-) dependency on purpose: Cargo only hands a `links` crate's
+# build-script metadata (`DEP_CALC_RUNTIME_*`) to the build scripts of crates that
+# depend on it directly, and `calc-runtime`'s `link_units_dir` is how this crate's
+# `build.rs` finds the FFI archive without knowing `calc-runtime`'s file layout.
+[dependencies]
+calc-runtime = { path = "../calc-runtime" }

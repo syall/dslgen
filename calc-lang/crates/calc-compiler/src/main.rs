@@ -1,16 +1,18 @@
 //! calcc — the calc-lang compiler CLI (spec.md §11). `run --interpret` (session A5)
 //! and `build [--backend=<name>]` (sessions A6–A8) are the only subcommands so far:
 //! both share the parse → resolve → lower prefix, then either interpret the IR
-//! directly or hand it to whichever `backend::Backend` `--backend` selected, and
-//! `link_stub`. A real CLI-argument crate (`clap`) and a `check` subcommand land in
-//! A13 — hand-rolled `env::args()` parsing is enough for two subcommands.
+//! directly or hand it to whichever `backend::Backend` `--backend` selected, then
+//! `runtime_deps` and `link` (session A12). A real CLI-argument crate (`clap`) and a
+//! `check` subcommand land in A13 — hand-rolled `env::args()` parsing is enough for
+//! two subcommands.
 
 mod backend;
 #[cfg(feature = "backend-cranelift")]
 mod cranelift_backend;
-mod link_stub;
+mod link;
 #[cfg(feature = "backend-llvm")]
 mod llvm_backend;
+mod runtime_deps;
 
 use std::env;
 use std::fs;
@@ -116,9 +118,20 @@ fn build(backend_name: Option<&str>, path: &str, out: &str) -> ExitCode {
         }
     };
 
-    match link_stub::link(&object_bytes, Path::new(out)) {
+    let prepared = match runtime_deps::prepare(&program) {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            eprintln!("calcc: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match link::link(&object_bytes, &prepared.bundles, Path::new(out)) {
         Ok(exe_path) => {
             println!("wrote {}", exe_path.display());
+            for note in &prepared.notes {
+                println!("note: needs at run time: {note}");
+            }
             ExitCode::SUCCESS
         }
         Err(err) => {

@@ -25,7 +25,7 @@ pub enum Instr {
         lhs: Temp,
         rhs: Temp,
     },
-    /// Calls the built-in named `name` (looked up in `calc_runtime::BUILTINS`) with
+    /// Calls the built-in named `name` (looked up in `calc_builtins::BUILTINS`) with
     /// `args`, writing its result to `dst`. Unlike a user-defined call there is no
     /// callee body in the program: the callee is an external symbol the linker
     /// supplies (spec.md §7). Operator-agnostic on purpose — lowering emits it for

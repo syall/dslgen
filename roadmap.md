@@ -389,8 +389,10 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 - **Compiler/tooling you'll learn**: nothing new conceptually — this is the "libstd
   analogy" from §4 made real: every generated workspace depends on this crate instead
   of reimplementing it.
-- **Deliverable**: `Backend` trait, both backend impls, the interpreter, and
-  `ipc_runtime.rs` moved into a standalone `dslgen-backend` crate; `calc-compiler` from
+- **Deliverable**: `Backend` trait, both backend impls, the interpreter, the link
+  driver and run-time dependency handling (`link.rs`, `runtime_deps.rs`), the IPC shim
+  (`ipc_runtime.rs`) and bundle format, and `calc-runtime-artifacts`' archive
+  building (A12) moved into a standalone `dslgen-backend` crate; `calc-compiler` from
   Part A now consumes it as a dependency and still passes all its existing tests.
 
 ### B3. Extract `dslgen-lsp`

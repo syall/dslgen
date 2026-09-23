@@ -247,7 +247,7 @@ fn lower_instr(
             // still has one undefined symbol, plus one relocation per call site), and
             // Cranelift itself lists coalescing them as a TODO, so it isn't cached here.
             let builtin =
-                calc_runtime::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
+                calc_builtins::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
             let mut sig = Signature::new(module.isa().default_call_conv());
             sig.params
                 .extend(vec![AbiParam::new(types::F64); builtin.arity]);
@@ -310,10 +310,10 @@ mod tests {
     use calc_syntax::{resolve, ParserFrontend};
 
     use super::compile_to_object;
-    use crate::link_stub;
+    use crate::link;
 
     /// Compiles `src` all the way to a linked, runnable executable via the exact
-    /// same parse → resolve → lower → `compile_to_object` → `link_stub::link`
+    /// same parse → resolve → lower → `compile_to_object` → `link::link`
     /// pipeline `calcc build --backend=cranelift` uses, runs it, and returns its
     /// exit code — the compiled program's answer, per `define_c_main`'s doc
     /// comment.
@@ -325,7 +325,12 @@ mod tests {
         let object_bytes = compile_to_object(&program);
 
         let out_path = std::env::temp_dir().join(format!("calc_a6_test_{out_name}"));
-        let exe_path = link_stub::link(&object_bytes, &out_path).expect("link should succeed");
+        let exe_path = link::link(
+            &object_bytes,
+            &calc_builtins::bundle_format::pack(&[]),
+            &out_path,
+        )
+        .expect("link should succeed");
 
         let status = Command::new(&exe_path)
             .status()

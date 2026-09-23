@@ -485,3 +485,159 @@ resolves to a non-functional Windows "app execution alias" stub (spawns fine, ex
 a shell does, while a real `python.exe` is also on `PATH`. Both names are tried by
 spawning and checking exit status (a spawn failure alone doesn't distinguish the stub
 case, which spawns successfully).
+
+## A12 — Link units: manifest, implementations and packaging in separate crates; derived vs. declared dependencies
+
+**The goal, set in planning with the user**: one concrete, simple dependency story for
+all three built-in kinds, so a user of the compiler could swap in their own
+implementation; linking reduced to "object + each implementation's archive + that
+archive's explicitly listed dependencies", with nothing hardcoded in the link driver;
+run-time dependencies and platform restrictions stated; and the shape lined up with
+Part B's `bindings.toml`.
+
+**The model: every built-in's symbol comes from a *link unit*.** A link unit is a
+static archive plus the native libraries it needs. Native-Rust built-ins and the IPC
+shim live in `calc-runtime`'s archive, whose dependencies rustc *derives*
+(`--print native-static-libs`). Each FFI library is its own link unit, and its
+dependencies are *declared* in the manifest (`BindingKind::Ffi { library, link_deps }`,
+with `LinkDep::only_on` as the platform restriction). A prebuilt archive can't report
+its own dependencies (an ELF `.a` records none), so declaring them is the only option.
+Run-time dependencies are declared too (`BindingKind::Ipc`, below), surfaced through
+one method for every kind (`Builtin::runtime_requirements`) and reported by `calcc
+build`. Considered and rejected: a hand-maintained list of system libraries
+per platform in the link driver (what `link_stub.rs` had). It's exactly what broke in
+A11, one `LNK2019` at a time. A prebuilt *Rust* static library counts as FFI, not
+native Rust: two Rust staticlibs in one executable each carry `std` and clash.
+
+**Layout: where manifest, implementations and packaging live.** Alternatives
+considered: (A) keep the layout and only fix the build mechanism; (B) split the
+manifest into a data-only crate; (C) have `calc-runtime` package its own link units,
+publishing their paths through Cargo `links` metadata; (D) implementations outside the
+workspace, located at `calcc build` time (spec.md §7.2's direction); (E) a dedicated
+packaging crate. Chose **B + C + E**:
+- `calc-builtins` holds the manifest only. It's the in-memory form B6's parser will
+  produce, and the backends and link driver depend on it rather than on
+  implementations.
+- `calc-runtime` holds implementations only. It builds its own FFI link unit and
+  publishes `link_units_dir` and `manifest_dir`, so it's the one place that knows how
+  `calc_ffi.c` is built.
+- `calc-runtime-artifacts` builds the runtime archive.
+
+C alone would have put the nested archive build inside `calc-runtime`'s own build
+script, building `calc-runtime` again: it would need a feature guard against
+recursion, and every dependent (e.g. `calc-ir`'s tests) would pay for the nested build.
+E puts that cost only where linking happens. D is deferred to C2, as the roadmap
+plans. It needs either Cargo at `calcc build` time or prebuilt archives, plus a way
+for the interpreter to reach out-of-tree implementations.
+
+**The runtime archive is a nested Cargo build, not a bare `rustc`.** `cargo rustc
+--crate-type staticlib --release --no-default-features --locked --offline --target
+<triple>`, with its own `--target-dir` under `OUT_DIR` (sharing the outer target
+directory would deadlock on Cargo's lock). Alternatives: keep the bare `rustc` (forces
+every built-in to be dependency-free — the user's standing direction is that no kind
+should be); `crate-type = ["rlib", "staticlib"]` in `calc-runtime`'s manifest (every
+ordinary build of the crate would also produce a staticlib, and Cargo doesn't reliably
+expose where a dependency's staticlib lands). Details that each fixed a real problem:
+- dropping `RUSTC_WORKSPACE_WRAPPER`, so `cargo clippy` doesn't lint the nested build;
+- `+crt-static` on MSVC, so rustc's own dependency list names the static C runtime
+  (`/defaultlib:libcmt`) and `link.rs` names no library at all;
+- `CARGO_PROFILE_RELEASE_PANIC=abort`, keeping A9's `panic=abort`;
+- re-running whenever a file in the nested build's own dep-info (`calc_runtime.d`)
+  changes, so no source path is hardcoded.
+
+Proof the constraint is gone: `ipc_runtime.rs` now speaks the JSON request/response
+protocol A11 deferred, via `serde_json`. Non-finite numbers travel as strings, since
+JSON has none.
+
+**FFI stays its own link unit instead of being bundled into the runtime archive.** A
+staticlib bundles the native static libraries its crate links, so with `link-ffi` on,
+`calc_sub` would have landed inside the runtime archive — one fewer file. Rejected: it
+would hide the FFI kind inside the Rust archive, which is precisely not the position a
+user's own C library is in, and it would tie the two kinds' C-runtime choices
+together. `calc-runtime`'s `link-natives` feature (default on) links `calc_ffi` for
+Rust consumers; the nested build turns it off.
+
+**Strong-linker additions, each documented in the A12 teaching doc**:
+- a pre-link check that reads each archive's symbol table (GNU/MSVC layout; BSD/Mach-O
+  skipped) and requires every built-in's symbol to be exported by its own unit and no
+  other;
+- a fixed link order (object → runtime archive → FFI archives → dependencies), which
+  single-pass Unix linkers need because the runtime archive's interpreter table
+  references FFI symbols;
+- on linker failure, the full command line plus the linker's output.
+
+Every declared FFI library is linked, not only the ones a program calls, for the same
+interpreter-table reason.
+
+**Platforms**: two command-line flavors (MSVC-like, GNU/Clang-like, as classified by
+`cc`). Anything else is an explicit error. Tested on x86_64 Windows MSVC and x86_64
+Linux; macOS, MinGW, clang-cl, the BSDs and aarch64 Linux are supported by
+construction but untested. The target triple is chosen in one place
+(`calc_runtime_artifacts::TARGET`, the host).
+
+**IPC built-ins: any language, multi-file, one command per platform, embedded
+(post-review).** Reviewing the first version surfaced two flaws in the IPC kind's
+run-time story:
+1. It only worked for one file: `print.py` was embedded with `include_str!` and run
+   via `python -c`. A multi-file project has nowhere to live at run time, and
+   "Python on PATH" under-reports what it needs.
+2. `commands = ["python3", "python"]`, tried in order at run time, was a guess. Which
+   interpreter ran was decided on the target machine, a broken dependency (the
+   Windows `python3` alias stub) was skipped instead of reported, and spec.md §7 wants
+   an unreachable IPC executable surfaced at `calcc build` time.
+
+Chose, with the user:
+- **An IPC implementation is one program speaking the JSON protocol, plus an optional
+  bundle directory.** No field is language-specific: `IpcCommand { program, args,
+  env, probe, only_on }` with a `{bundle}` placeholder covers a Python project, Node,
+  a Java jar or a helper binary inside the bundle. `args`/`env` are per command
+  because they differ by platform.
+- **Exactly one command per platform** (`python3` on Unix, `python` on Windows),
+  **probed at `calcc build`**. The Windows alias stub now fails the build with its own
+  error message.
+- **The bundle is embedded in the executable as linked data.** `calcc build` packs it
+  (`calc_builtins::bundle_format`, one definition for both sides), and the link driver
+  generates a data-only object defining `calc_ipc_bundles`/`calc_ipc_bundles_len`
+  with the `object` crate. The shim unpacks on first use into a per-user,
+  content-hashed cache directory (`CALC_BUNDLE_CACHE` overrides it), via a temporary
+  sibling and a rename.
+
+Alternatives considered for shipping the bundle: keep the embedded string (single-file
+only); a zipapp (Python-only, and still needs extracting for native extensions);
+require an installed launcher on `PATH` (pushes packaging onto every user); a
+directory next to the executable (two things to ship); appending to the executable
+(breaks macOS/Windows code signing). A found problem, fixed in the manifest rather than
+in `calcc`: running the bundle from its source directory made Python write
+`__pycache__/` there, which then got packed. `print`'s commands set
+`PYTHONDONTWRITEBYTECODE=1` through `env`, because a Python-specific exclude list in
+`calcc` would break the "nothing language-specific" rule. Rust consumers (`calcc`, test
+harnesses) get an empty `calc_ipc_bundles` from `native/no_ipc_bundles.c` (feature
+`link-ffi` renamed `link-natives`). Deferred: removing old bundle versions from the
+cache, and building bundles (`npm ci`, `javac`), which is the implementation author's
+step.
+
+**`{bundle}` rules (post-review).** Two questions, deliberately answered separately:
+- `runs_from_bundle()` asks whether the executable itself is in the bundle, and looks
+  only at `program`: `python3 {bundle}` still needs `python3` on `PATH`, so it's still
+  reported and probed.
+- `uses_bundle()` asks whether anything (`program`, `args` or `env`) refers to the
+  bundle, and must be true exactly when the built-in declares one.
+
+A `{bundle}` with no bundle would resolve to an empty path, and a bundle nothing refers
+to would ship in every executable for nothing. Both fail a manifest test and
+`calcc build`. Rejecting an unreferenced bundle was a choice: a program could find its
+files some other way, but nothing in calc-lang does, so dead weight wins over
+flexibility. A program inside its bundle is checked for existence and then still
+probed if it declares a probe, rather than the probe being silently skipped.
+
+**Deliberately deferred**, each with a scheduled home after spec/roadmap commits
+`c741d7e` and `26e85bb`:
+- dynamic linking of FFI libraries → C7 (`link = "dynamic"`; the library becomes a
+  reported run-time dependency);
+- cross-compilation → C8, which also retires the LLVM backend's x86-only build and
+  host-only target machine (the deferral A7 left for A8, which A8 never picked up);
+- a `wasm32` target, with `wasm-ld` as a third link flavor → C1-wasm (optional);
+- overriding implementation locations without rebuilding `calcc` → C2;
+- embedding or installing the runtime archive so `calcc` works outside its build tree
+  → unscheduled;
+- `--verbose`/`--keep-object` → A13's CLI.

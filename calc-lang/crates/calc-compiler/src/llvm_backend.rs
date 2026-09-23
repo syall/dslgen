@@ -171,7 +171,7 @@ fn lower_instr<'ctx>(
             // Declaring (not defining) the function leaves an undefined symbol for the
             // linker to resolve from the runtime library (spec.md §7).
             let builtin =
-                calc_runtime::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
+                calc_builtins::lookup(name).unwrap_or_else(|| panic!("unknown built-in `{name}`"));
             let callee = module.get_function(builtin.symbol).unwrap_or_else(|| {
                 let params = vec![f64_ty.into(); builtin.arity];
                 module.add_function(builtin.symbol, f64_ty.fn_type(&params, false), None)
@@ -286,7 +286,7 @@ mod tests {
     use super::{compile_to_object, llvm_ir};
     #[cfg(feature = "backend-cranelift")]
     use crate::cranelift_backend;
-    use crate::link_stub;
+    use crate::link;
 
     fn lower_source(src: &str) -> calc_ir::Program {
         let ast = LalrpopFrontend.parse(src).expect("should parse");
@@ -297,7 +297,12 @@ mod tests {
     /// Links `object_bytes` and runs the result, returning its exit code.
     fn link_and_run(object_bytes: &[u8], out_name: &str) -> i32 {
         let out_path = std::env::temp_dir().join(format!("calc_a7_test_{out_name}"));
-        let exe_path = link_stub::link(object_bytes, &out_path).expect("link should succeed");
+        let exe_path = link::link(
+            object_bytes,
+            &calc_builtins::bundle_format::pack(&[]),
+            &out_path,
+        )
+        .expect("link should succeed");
         let status = Command::new(&exe_path)
             .status()
             .expect("built executable should run");

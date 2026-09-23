@@ -2,7 +2,9 @@
 resolver = "2"
 members = [
     "crates/calc-syntax",
+    "crates/calc-builtins",
     "crates/calc-runtime",
+    "crates/calc-runtime-artifacts",
     "crates/calc-ir",
     "crates/calc-compiler",
     "crates/calc-lsp",

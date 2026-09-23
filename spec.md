@@ -156,6 +156,13 @@ It then generates a Rust workspace (e.g. `calc-lang/`):
 crates/calc-syntax/      parser frontend (generated grammar glue or custom impl),
                          AST types, role/symbol model (shared lib)
 crates/calc-ir/          lowering: AST -> mid-level IR
+crates/calc-builtins/    the built-in manifest as data (from bindings.toml, §7)
+crates/calc-runtime/     built-in implementations: native Rust functions, FFI
+                         library sources, the subprocess/IPC shim
+                         (src/ipc_runtime.rs), and IPC bundles (§7)
+crates/calc-runtime-artifacts/
+                         builds calc-runtime as a static archive, plus rustc's
+                         list of the native libraries it needs, for linking
 crates/calc-compiler/    bin: calcc
   src/codegen/llvm.rs
   src/codegen/cranelift.rs
@@ -163,8 +170,9 @@ crates/calc-compiler/    bin: calcc
   src/mem/                 memory management strategy support; primitives bound as
                            built-ins like any other (§7, §8.2)
   src/interpret.rs         debug backend (§9)
-  src/link.rs              FFI link driver
-  src/ipc_runtime.rs       subprocess/IPC shim
+  src/link.rs              link driver: object + each built-in implementation's
+                           archive + its declared/derived native dependencies
+  src/runtime_deps.rs      run-time dependency checks, IPC bundle packing (§7)
 crates/calc-lsp/         bin: calc-lsp — LSP server (§10)
 Cargo.toml                workspace manifest; backend inclusion via feature flags
 ```
@@ -181,7 +189,8 @@ program.calc --> calcc build --backend=llvm program.calc -o program
 ```
 
 The resulting executable has no `calcc`/`dslgen` dependency, though it may still need
-external interpreters on `PATH` for any IPC built-ins it uses (§7). Separately, an
+external interpreters on `PATH` for any IPC built-ins it uses, and a writable per-user
+cache directory to unpack their embedded bundles into (§7). Separately, an
 editor speaks the LSP protocol to `calc-lsp` for live diagnostics, semantic
 highlighting, and go-to-definition/hover while editing `.calc` files.
 
@@ -383,6 +392,17 @@ kinds**:
   have the external runtime available (e.g. `python3` on `PATH`) — this breaks the
   "zero external runtime dependency" property for programs using an IPC built-in;
   an accepted, explicit tradeoff (§3).
+- **An IPC implementation is one program speaking the declared protocol, plus an
+  optional bundle** — a directory of files that program needs (a multi-file Python
+  project, a Node.js script and its `node_modules`, a jar, a helper binary). Nothing
+  in the model is specific to a language. Per platform, exactly one command is
+  declared (program, arguments, environment, and a probe `calcc build` runs to check
+  it works); a `{bundle}` placeholder stands for the bundle's directory, and the
+  program may itself live inside the bundle. `calcc build` embeds each used bundle
+  in the executable as linked data, so the program is still a single file; on first
+  use the shim unpacks it into a per-user, content-addressed cache directory, which
+  becomes one more reported run-time requirement. Building a bundle's contents
+  (`npm ci`, `javac`, ...) is the implementation author's step, not `calcc`'s.
 - Both kinds are declared in the same manifest, validated at generation time wherever
   feasible: a missing symbol, bad signature, or (for IPC) unreachable
   executable/malformed protocol schema should surface at `dslgen build`/`calcc build`
@@ -428,8 +448,21 @@ kinds**:
     [[builtin.impl]]
     target = "default"
     kind = "subprocess"
-    command = "python3"
-    args = ["print.py"]
+    bundle = "print"               # a directory embedded in the executable (§7)
+
+      [[builtin.impl.command]]     # exactly one per platform
+      only_on = "unix"
+      program = "python3"
+      args = ["{bundle}"]          # {bundle}: the bundle's directory at run time
+      env = { PYTHONDONTWRITEBYTECODE = "1" }
+      probe = ["--version"]        # run at `calcc build` to check it works
+
+      [[builtin.impl.command]]
+      only_on = "windows"
+      program = "python"
+      args = ["{bundle}"]
+      env = { PYTHONDONTWRITEBYTECODE = "1" }
+      probe = ["--version"]
 
     [[builtin.impl]]
     target = "wasm32-*"
@@ -443,6 +476,12 @@ kinds**:
   function, or (where the target environment supports spawning processes at all) an
   IPC bridge — the DSL author picks whichever of the three first-class kinds fits the
   target, per built-in, without touching anything upstream of the manifest.
+- Two levels of selection, deliberately distinct: `target` picks *which
+  implementation* backs a built-in (by target triple), while `only_on` (`"unix"` /
+  `"windows"`, Rust's `target_family`) only varies *how one implementation is invoked
+  or linked* on each platform — its command, or an FFI library's link dependencies.
+  Changing kind or implementation belongs in `target`; changing a program name or a
+  path separator belongs in `only_on`.
 - Target selectors need a concrete matching syntax/precedence (exact wildcard/pattern
   rules, most-specific-wins vs. declaration-order) — left open (§14) — but the
   *shape* of "one interface, N target-scoped implementations, each independently
@@ -787,7 +826,11 @@ kinds**:
    default to Cranelift-only (lighter build), LLVM-only, or both enabled? Affects
    first-run experience versus build-time/dependency cost.
 5. **IPC protocol design** (§7): stdio + line-delimited JSON vs. a compact binary
-   protocol vs. something gRPC-like.
+   protocol vs. something gRPC-like. calc-lang's working answer (roadmap A11/A12): one
+   UTF-8 JSON request on stdin, read until EOF, and one JSON response on stdout per
+   call, with non-finite numbers as strings. Still open for generated compilers,
+   together with #6 (a long-lived worker needs framing, e.g. line-delimited
+   messages).
 6. **IPC process lifecycle** (§7): spawn-per-call vs. long-lived worker process —
    likely a per-binding choice in `bindings.toml`.
 7. **IPC failure semantics** (§7): catchable DSL-level error vs. process-level abort

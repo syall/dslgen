@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 calc-syntax = { path = "../calc-syntax" }
+calc-builtins = { path = "../calc-builtins" }
 calc-runtime = { path = "../calc-runtime" }

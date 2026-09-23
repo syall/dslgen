@@ -87,15 +87,17 @@ fn exec_instr(instr: &Instr, store: &mut TempStore) {
             store.write(*dst, Value::Number(result));
         }
         Instr::CallBuiltin { dst, name, args } => {
-            let builtin = calc_runtime::lookup(name)
+            let builtin = calc_builtins::lookup(name)
                 .unwrap_or_else(|| panic!("calc_ir::interp: unknown built-in `{name}`"));
+            let eval = calc_runtime::eval(name)
+                .unwrap_or_else(|| panic!("calc_ir::interp: no implementation for `{name}`"));
             let args: Vec<f64> = args.iter().map(|a| store.read(*a).as_number()).collect();
             assert_eq!(
                 args.len(),
                 builtin.arity,
                 "built-in `{name}` arity mismatch"
             );
-            store.write(*dst, Value::Number((builtin.eval)(&args)));
+            store.write(*dst, Value::Number(eval(&args)));
         }
         Instr::Copy { dst, src } => {
             let value = store.read(*src);
@@ -162,10 +164,10 @@ mod tests {
 
     /// `print` (session A11, kind 3: subprocess/IPC) goes through the exact same
     /// generic `CallBuiltin` path as `add`/`mul`/`sub` — no interpreter changes
-    /// were needed to support a new binding kind, only a new `calc-runtime`
-    /// manifest entry. As a statement (not an expression — see
-    /// `calc-lang/DECISIONS.md`'s A11 entry), its own result is unreachable, so
-    /// this checks that evaluating it doesn't disturb the block's real result.
+    /// were needed to support a new binding kind, only a new manifest entry
+    /// (`calc-builtins`) and its implementation (`calc-runtime`). As a statement
+    /// (not an expression — see `calc-lang/DECISIONS.md`'s A11 entry), its own
+    /// result is unreachable, so this checks that evaluating it doesn't disturb the block's real result.
     #[test]
     fn a_print_statement_does_not_disturb_the_blocks_result() {
         assert_eq!(

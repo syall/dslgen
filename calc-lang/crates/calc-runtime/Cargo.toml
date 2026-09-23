@@ -3,6 +3,26 @@ name = "calc-runtime"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+# Lets this crate's build script publish metadata (`manifest_dir`, `link_units_dir`,
+# `ipc_dir`) that the build scripts of crates depending on it read as
+# `DEP_CALC_RUNTIME_*` (session A12).
+links = "calc_runtime"
+
+[dependencies]
+calc-builtins = { path = "../calc-builtins" }
+serde_json = "1"
 
 [build-dependencies]
 cc = "1.4.6"
+
+# `link-natives` links this crate's native pieces into its Rust consumers (the
+# interpreter, tests): `native/calc_ffi.c`, and an empty IPC bundle table
+# (`native/no_ipc_bundles.c`) for `calc_print`'s reference to resolve. It also
+# publishes a static-CRT copy of `calc_ffi` as a link unit for compiled programs.
+# `calc-runtime-artifacts` builds this crate's static archive with it *off*, so that
+# archive only references `calc_sub` and the bundle table: the FFI library stays a
+# separate link unit — exactly the position a user's own library would be in — and
+# the link driver supplies the table from the program's real bundles.
+[features]
+default = ["link-natives"]
+link-natives = []

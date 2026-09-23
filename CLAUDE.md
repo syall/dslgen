@@ -88,13 +88,21 @@ pipeline.
 - `crates/calc-syntax` — parser frontend(s) behind the `ParserFrontend` trait
   (spec.md §5); has a `build.rs` for the LALRPOP grammar.
 - `crates/calc-ir` — typed AST/IR types and lowering.
-- `crates/calc-runtime` — the built-in manifest (spec.md §7), plus every kind's real
-  implementation that's expressible in this crate: native-Rust `extern "C"` functions
-  directly in `src/lib.rs` (kind 1), and a tiny bundled C library under `native/`,
-  compiled and linked in by this crate's own `build.rs` (kind 2 — C-ABI FFI). Both are
-  also independently built into static libraries by `calc-compiler/build.rs`, which
-  `link_stub.rs` links into every compiled program.
-- `crates/calc-compiler` — the `calcc` compiler binary, codegen backends.
+- `crates/calc-builtins` — the built-in manifest (spec.md §7), data only: each
+  built-in's name, symbol, arity, binding kind, and that kind's declared link/run-time
+  dependencies (the in-memory form of Part B's `bindings.toml`).
+- `crates/calc-runtime` — the built-ins' real implementations: native-Rust `extern
+  "C"` functions (kind 1), a tiny C library under `native/` that its `build.rs`
+  compiles and publishes as the `calc_ffi` link unit (kind 2), and the IPC shim
+  (kind 3, `serde_json`) plus IPC bundles under `ipc/` (e.g. `ipc/print/`, a
+  multi-file Python project `calcc build` embeds in executables). `eval` is the
+  interpreter's entry point.
+- `crates/calc-runtime-artifacts` — builds `calc-runtime` as a static archive with a
+  nested Cargo build and records rustc's list of its native dependencies; these are
+  the link driver's inputs.
+- `crates/calc-compiler` — the `calcc` compiler binary, codegen backends, the link
+  driver (`src/link.rs`), and run-time dependency checks/bundling
+  (`src/runtime_deps.rs`).
 - `crates/calc-lsp` — the `calc-lsp` language server binary.
 - `calc-lang/DECISIONS.md` — decision log for choices made while building
   `calc-lang` (Part A). Add an entry when a session makes a real design choice,
