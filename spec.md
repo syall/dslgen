@@ -108,7 +108,10 @@ is the central structural idea of the whole system (§4).
 - Not designing a package/module system for DSLs-of-DSLs (importing one generated DSL
   from another) in v1.
 - Not committing to cross-compilation support in v1 (host-native builds only); the
-  backend abstraction (§8) should not foreclose it later.
+  backend abstraction (§8) should not foreclose it later. The one planned exception
+  is a `wasm32` target (§7.1, §8.1), and only if §14 #19 resolves in favor of
+  shipping it in v1 — it's scheduled as an optional roadmap session, not a
+  commitment.
 - Not guaranteeing subprocess/IPC built-ins preserve the "single self-contained
   binary, zero external runtime dependencies" property (§7) — that tradeoff is
   inherent to choosing an IPC-backed built-in and is accepted, not solved, in v1.
@@ -385,7 +388,22 @@ kinds**:
   kind-specific mapping tables: FFI signatures map to C ABI types; IPC signatures map
   to whatever serialization format is chosen (§14).
 - Linking model for FFI built-ins: v1 supports static linking as the default, with
-  dynamic loading as an option.
+  dynamic linking as a per-implementation option (`link = "static" | "dynamic"` on an
+  FFI `[[builtin.impl]]`, §7.1):
+  - **Static** (default): the library's archive is copied into the produced
+    executable at `calcc build` time, so the program has no run-time dependency on
+    it.
+  - **Dynamic**: the executable is linked against the shared library (`.so`/`.dylib`,
+    or a `.dll` through its import `.lib` on Windows) and the system loader resolves
+    it at program startup. The library becomes a declared **run-time dependency** of
+    the produced program, reported by `calcc build` the same way an IPC built-in's
+    interpreter is, and located via a recorded search path (rpath on Unix, the
+    executable's own directory on Windows). This is what lets a user swap an FFI
+    implementation *without re-linking* the program — a natural pairing with §7.2's
+    location overrides.
+  - Explicit run-time loading by the program itself (`dlopen`/`LoadLibrary`) is not a
+    v1 mode; load-time dynamic linking covers the swap-without-relinking use case
+    with no new runtime machinery.
 - Built-in signatures (all three kinds) are also surfaced to the generated LSP as
   hover documentation on call sites (§10) — a natural, low-cost extra use of the same
   manifest data.
@@ -523,6 +541,13 @@ kinds**:
     backends later (e.g. a WASM backend, GCC via libgccjit) without touching the
     mid-level IR or anything upstream of codegen — "any number of backends" is a
     design property of this boundary, not a fixed count.
+  - **`wasm32` targets go through LLVM only**: Cranelift consumes WebAssembly but
+    doesn't emit it, so a `wasm32` build is the LLVM backend pointed at a wasm
+    target triple, not a third backend. It also needs its own link path (`wasm-ld`
+    rather than the system C toolchain), FFI built-ins realized as imported host
+    functions (§7.1), and a wasm runtime to execute the result. The IPC kind isn't
+    available on `wasm32-unknown-unknown` (no process spawning); a WASI target may
+    relax that. Whether this ships in v1 is §14 #19.
 - The interpreter backend (§9) also consumes the same mid-level IR and implements a
   parallel (non-`Backend`-trait, since it doesn't produce an executable) execution
   path, so semantics stay single-sourced and it can serve as a correctness oracle for
@@ -790,7 +815,9 @@ kinds**:
     (§7.1) is designed with WASM-via-LLVM in mind, but whether DSL-Generator actually
     ships and tests a working WASM target in v1, or only ships the general mechanism
     with WASM as a forward-looking example, is unresolved and interacts with #13's
-    cross-compilation scoping.
+    cross-compilation scoping. If pursued, §8.1's `wasm32` bullet lists what a
+    working target needs; the roadmap schedules it as an optional session after the
+    target-selection work (§7.1).
 20. **Naming**: "DSLG"/"DSLA"/"dslgen"/`dslgen-backend`/`dslgen-lsp` are working
     names only, not proposals to commit to.
 21. **Scope/symbol-table primitive set and IPC guard** (§7.3): whether

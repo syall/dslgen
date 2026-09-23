@@ -245,7 +245,7 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
 - **Rust you'll learn**: `extern "C"` declarations, `#[no_mangle]`, linking a small C
   (or `cdylib` Rust) library via `build.rs`/`cc`.
 - **Compiler/tooling you'll learn**: the C ABI as the universal interop boundary; static
-  vs. dynamic linking tradeoffs (§7 default: static).
+  vs. dynamic linking tradeoffs (§7 default: static; dynamic linking itself is C7).
 - **Deliverable**: one FFI built-in calling into a tiny linked C library, working
   through both backends.
 
@@ -541,6 +541,26 @@ each other (dependencies noted per-session).
 - **Deliverable**: a built-in with two `[[builtin.impl]]` blocks (e.g. `default` +
   `wasm32-*`), with a test proving the right one is selected per target.
 
+### C1-wasm. A working `wasm32` target (optional, gated on §14.19)
+
+- **Spec refs**: §7.1, §8.1 (`wasm32` bullet), §3 (cross-compilation exception),
+  §14.13, §14.19
+- **Prereqs**: A7/A8 (LLVM backend), A12 (link driver), C1
+- **Rust you'll learn**: `inkwell`'s WebAssembly target (enabling its
+  `target-webassembly` feature alongside `target-x86`), building a Rust crate for
+  `wasm32-*` targets, embedding a wasm runtime (e.g. `wasmtime`) in a test harness.
+- **Compiler/tooling you'll learn**: what changes when the target isn't the host —
+  a different object format, a different linker (`wasm-ld` instead of the system C
+  toolchain, as a third path in A12's link driver), and no operating system
+  underneath: FFI built-ins become imported host functions, and the IPC kind has no
+  way to spawn a process on `wasm32-unknown-unknown` (a WASI target may relax that).
+  Why Cranelift can't take part (it consumes wasm, it doesn't emit it).
+- **Deliverable**: first, a recorded answer to §14.19 (does v1 ship this?); if yes,
+  `calcc build --backend=llvm --target=wasm32-...` producing a `.wasm` module for a
+  program using a native-Rust built-in and C1's `wasm32-*` implementation of an FFI
+  one, run under a wasm runtime in a test with the correct result — and a clear
+  build-time error for any built-in whose only implementation is IPC.
+
 ### C2. External override configuration
 
 - **Spec refs**: §7.2, §14.18
@@ -624,6 +644,26 @@ each other (dependencies noted per-session).
   per-session entries) — useful both as a record and as a sanity check that nothing
   was left silently ambiguous.
 
+### C7. Dynamic linking for FFI built-ins
+
+- **Spec refs**: §7 (FFI linking model), §7.2
+- **Prereqs**: A12 (link driver), B6 (the manifest gains the `link` field), C2
+  (location overrides, which dynamic linking makes useful without re-linking)
+- **Rust you'll learn**: building a `cdylib`, platform-conditional linker arguments
+  (`-Wl,-rpath,...` vs. Windows import libraries), locating a shared library next to
+  an executable in tests.
+- **Compiler/tooling you'll learn**: static vs. dynamic linking in practice rather
+  than as A10's tradeoff discussion — shared libraries, import libraries (`.lib` vs.
+  `.dll` on Windows), how the system loader finds a library at program startup
+  (rpath, the executable's directory, `LD_LIBRARY_PATH`/`PATH`), and why a dynamically
+  linked library turns into a *run-time* dependency the link driver must report, just
+  like an IPC built-in's interpreter.
+- **Deliverable**: an FFI built-in declared with `link = "dynamic"` in
+  `bindings.toml`, linked by `calcc build` against its shared library and reported as
+  a run-time dependency; a test proving the compiled program picks up a *different*
+  build of that library (e.g. swapped via C2's override, or just replaced on disk)
+  without re-running `calcc build`. Static stays the default.
+
 ---
 
 ## Suggested minimum path
@@ -633,9 +673,10 @@ committing to every session: **A0 → A1 → A2 → A3 → A4 → A5 → A6 → 
 **B1 → B2 → B4 → B5 → B7**. That's parsing, AST, scopes, IR, interpreter, one codegen
 backend, the backend abstraction, one built-in kind, a CLI, then the full
 generalize-into-a-generator arc. Everything else (second backend, FFI/IPC, LSP, hot
-reload, memory strategies, retargeting, overrides, docs) layers on afterward in any
-order you like — including **A1-pest**, **A1-custom**, **A17**, and **B10**, which are
-entirely optional side branches: skip them if you're fine taking "the parser layer is
-pluggable" and "memory/scope primitives are built-ins too" on faith, do them if you
-want to see pest, a hand-written recursive-descent parser, and the scope/symbol-table
-refactor actually happen.
+reload, memory strategies, retargeting, overrides, dynamic linking, docs) layers on
+afterward in any order you like — including **A1-pest**, **A1-custom**, **A17**,
+**B10**, and **C1-wasm**, which are entirely optional side branches: skip them if you're
+fine taking "the parser layer is pluggable", "memory/scope primitives are built-ins
+too", and "the retargeting model reaches wasm" on faith, do them if you want to see
+pest, a hand-written recursive-descent parser, the scope/symbol-table refactor, and a
+real `wasm32` build actually happen.
