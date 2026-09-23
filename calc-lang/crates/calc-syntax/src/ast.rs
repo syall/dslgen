@@ -33,5 +33,16 @@ pub enum BinOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Let { name: String, value: Expr },
+    Let {
+        name: String,
+        value: Expr,
+    },
+    /// `print(<expr>);` — calc-lang's one fixed built-in surface (session A11),
+    /// the same "operators are the surface" principle A9 established for
+    /// `+`/`*`/`-`, extended to one hardcoded keyword rather than general call
+    /// syntax: there's no callee name to resolve, just this single construct. A
+    /// statement, not an expression, since it's run for its side effect — see
+    /// `calc-lang/DECISIONS.md`'s A11 entry for why (it briefly was an
+    /// expression, then moved here).
+    Print(Expr),
 }

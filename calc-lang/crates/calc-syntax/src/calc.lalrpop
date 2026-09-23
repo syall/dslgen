@@ -2,7 +2,23 @@ use crate::ast::{BinOp, Expr, Stmt};
 
 grammar;
 
-pub Expr: Expr = {
+/// The parser's actual entry point (session A11): a program is a statement
+/// sequence followed by a mandatory result expression, exactly like a `Block`'s
+/// insides — but without the surrounding `{ }`, so `print(1); 2` is a complete
+/// program on its own, not just `{ print(1); 2 }`. When there are no leading
+/// statements, this produces the bare result `Expr` directly rather than an
+/// `Expr::Block` wrapping nothing — preserving every existing program's exact AST
+/// shape (e.g. `1 + 2` still parses to `Expr::BinOp(..)`, not `Expr::Block { stmts:
+/// vec![], result: .. }`).
+pub Program: Expr = {
+    <stmts:Stmt*> <result:Expr> => if stmts.is_empty() {
+        result
+    } else {
+        Expr::Block { stmts, result: Box::new(result) }
+    },
+};
+
+Expr: Expr = {
     <l:Expr> "+" <r:Factor> => Expr::BinOp(Box::new(l), BinOp::Add, Box::new(r)),
     <l:Expr> "-" <r:Factor> => Expr::BinOp(Box::new(l), BinOp::Sub, Box::new(r)),
     Factor,
@@ -29,6 +45,7 @@ Block: Expr = {
 
 Stmt: Stmt = {
     "let" <name:Ident> "=" <value:Expr> ";" => Stmt::Let { name, value },
+    "print" "(" <e:Expr> ")" ";" => Stmt::Print(e),
 };
 
 Num: f64 = r"[0-9]+(\.[0-9]+)?" => <>.parse().unwrap();

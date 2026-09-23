@@ -68,4 +68,24 @@ Read in order:
     required; two independent builds of the same C source, one per consumer; and a real
     MSVC linker warning (a static-vs-dynamic CRT mismatch) and how it was actually fixed.
 
+12. [a11-subprocess-ipc-builtins.md](a11-subprocess-ipc-builtins.md) — built-ins backed
+    by a subprocess: `print`, calc-lang's first new syntax since `if`/`let`, and its
+    first built-in with a side effect and a real external runtime dependency; why it's
+    a statement rather than an expression, and a tried-and-reverted follow-up on
+    whether its call should be genuinely `void` (it worked, but the value was already
+    unreachable either way, so the cross-cutting complexity wasn't worth it); a new
+    top-level `Program` grammar rule (distinct from `Expr`) that lets a statement
+    sequence appear with no surrounding `{ }`, making `print(1); 2` a complete
+    program, while every existing statement-free program keeps its exact original
+    AST shape; the any-language-becomes-a-built-in tradeoff IPC makes and its cost;
+    spawn-per-call as the simplest process lifecycle; why the built-in's protocol is a
+    plain command-line argument rather than JSON over stdio, forced by
+    `calc-runtime`'s dependency-free special build (with a diagram of exactly how
+    `include_str!` embeds the script's text into both `calcc` and every compiled
+    program); a surprise finding that the built-in links into *compiled* programs too,
+    not just the interpreter, plus the real MSVC linker errors (missing Winsock/
+    NT-native-API import libraries) and what it took to fix them; and a real
+    Windows-specific gotcha (a non-functional `python3` "app execution alias") and its
+    fallback fix.
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.

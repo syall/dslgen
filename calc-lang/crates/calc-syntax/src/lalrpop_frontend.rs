@@ -13,7 +13,7 @@ impl ParserFrontend for LalrpopFrontend {
     type Ast = Expr;
 
     fn parse(&self, src: &str) -> Result<Self::Ast, Vec<ParseDiagnostic>> {
-        calc::ExprParser::new()
+        calc::ProgramParser::new()
             .parse(src)
             .map_err(|err| vec![convert_error(err)])
     }
@@ -53,8 +53,8 @@ mod tests {
     use crate::ast::{BinOp, Stmt};
 
     /// Throwaway: exercises `parse()` only through the `ParserFrontend` trait, never
-    /// the LALRPOP-generated `calc::ExprParser` type directly, so later sessions can
-    /// swap the frontend out without this test caring.
+    /// the LALRPOP-generated `calc::ProgramParser` type directly, so later sessions
+    /// can swap the frontend out without this test caring.
     #[test]
     fn parses_arithmetic_variables_and_if_else() {
         let frontend = LalrpopFrontend;
@@ -161,6 +161,39 @@ mod tests {
                     Box::new(Expr::Number(2.0)),
                 )),
             }
+        );
+    }
+
+    /// Session A11: the top-level entry point (`Program`, not `Expr`) accepts a
+    /// statement sequence with no surrounding `{ }` — `print(1); 2` is a complete
+    /// program, equivalent to `{ print(1); 2 }`, not a syntax error.
+    #[test]
+    fn a_top_level_program_accepts_statements_with_no_surrounding_braces() {
+        let frontend = LalrpopFrontend;
+        let ast = frontend.parse("print(1); 2").expect("should parse");
+
+        assert_eq!(
+            ast,
+            Expr::Block {
+                stmts: vec![Stmt::Print(Expr::Number(1.0))],
+                result: Box::new(Expr::Number(2.0)),
+            }
+        );
+    }
+
+    /// A program with no top-level statements still parses to a bare `Expr`, not
+    /// `Expr::Block { stmts: vec![], .. }` — the implicit-block behavior above
+    /// doesn't change any existing program's AST shape.
+    #[test]
+    fn a_top_level_program_with_no_statements_is_not_wrapped_in_a_block() {
+        let frontend = LalrpopFrontend;
+        assert_eq!(
+            frontend.parse("1 + 2").expect("should parse"),
+            Expr::BinOp(
+                Box::new(Expr::Number(1.0)),
+                BinOp::Add,
+                Box::new(Expr::Number(2.0)),
+            )
         );
     }
 }

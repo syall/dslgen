@@ -159,4 +159,26 @@ mod tests {
     fn evaluates_arithmetic_with_precedence() {
         assert_eq!(interpret_source("2 + 3 * 4"), Value::Number(14.0));
     }
+
+    /// `print` (session A11, kind 3: subprocess/IPC) goes through the exact same
+    /// generic `CallBuiltin` path as `add`/`mul`/`sub` — no interpreter changes
+    /// were needed to support a new binding kind, only a new `calc-runtime`
+    /// manifest entry. As a statement (not an expression — see
+    /// `calc-lang/DECISIONS.md`'s A11 entry), its own result is unreachable, so
+    /// this checks that evaluating it doesn't disturb the block's real result.
+    #[test]
+    fn a_print_statement_does_not_disturb_the_blocks_result() {
+        assert_eq!(
+            interpret_source("{ let x = 1; print(x + 2); x + 5 }"),
+            Value::Number(6.0)
+        );
+    }
+
+    /// Session A11's top-level `Program` entry point: `print(1); 2` is a complete
+    /// program with no surrounding `{ }`, equivalent to `{ print(1); 2 }`, and
+    /// runs through resolve/lower/interpret exactly the same way.
+    #[test]
+    fn a_top_level_program_runs_statements_with_no_surrounding_braces() {
+        assert_eq!(interpret_source("print(1); 2"), Value::Number(2.0));
+    }
 }

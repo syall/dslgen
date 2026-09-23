@@ -1,0 +1,65 @@
+<svg viewBox="0 0 680 494" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .filebox { fill: #f2f4f8; stroke: #4b5563; stroke-width: 1.5; }
+      .buildbox { fill: #e8eefc; stroke: #3b5bdb; stroke-width: 1.5; }
+      .runbox { fill: #fdf1e7; stroke: #b45309; stroke-width: 1.5; }
+      .label { fill: #1f2430; font-size: 13.5px; font-weight: 700; text-anchor: middle; }
+      .caption { fill: #4b5563; font-size: 11.5px; text-anchor: middle; }
+      .edge { stroke: #4b5563; stroke-width: 1.6; fill: none; }
+      .arrowhead { fill: #4b5563; }
+      .edgelabel { fill: #1f2430; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect class="bg" width="680" height="494"/>
+
+  <rect class="filebox" x="110" y="40" width="460" height="44" rx="6"/>
+  <text class="label" x="340" y="58">native/print.py</text>
+  <text class="caption" x="340" y="74">source file on disk</text>
+
+  <path class="edge" d="M340,84 L340,110" marker-end="url(#arrow)"/>
+  <text class="edgelabel" x="350" y="100">include_str!("../native/print.py")</text>
+
+  <rect class="buildbox" x="110" y="110" width="460" height="44" rx="6"/>
+  <text class="label" x="340" y="128">PRINT_SCRIPT</text>
+  <text class="caption" x="340" y="144">holds the file's full text, not a path</text>
+
+  <path class="edge" d="M340,154 L200,190" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,154 L480,190" marker-end="url(#arrow)"/>
+
+  <rect class="buildbox" x="80" y="190" width="240" height="44" rx="6"/>
+  <text class="label" x="200" y="208">calc-runtime rlib</text>
+  <text class="caption" x="200" y="224">ordinary cargo build</text>
+
+  <rect class="buildbox" x="360" y="190" width="240" height="44" rx="6"/>
+  <text class="label" x="480" y="208">static archive</text>
+  <text class="caption" x="480" y="224">calc_runtime.lib / .a</text>
+
+  <path class="edge" d="M200,234 L200,260" marker-end="url(#arrow)"/>
+  <path class="edge" d="M480,234 L480,260" marker-end="url(#arrow)"/>
+
+  <rect class="runbox" x="80" y="260" width="240" height="44" rx="6"/>
+  <text class="label" x="200" y="278">calcc binary</text>
+  <text class="caption" x="200" y="294">run --interpret</text>
+
+  <rect class="runbox" x="360" y="260" width="240" height="44" rx="6"/>
+  <text class="label" x="480" y="278">prog.exe</text>
+  <text class="caption" x="480" y="294">compiled .calc program</text>
+
+  <path class="edge" d="M200,304 L280,340" marker-end="url(#arrow)"/>
+  <path class="edge" d="M480,304 L400,340" marker-end="url(#arrow)"/>
+
+  <rect class="runbox" x="110" y="340" width="460" height="44" rx="6"/>
+  <text class="label" x="340" y="358">spawn python3 -c</text>
+  <text class="caption" x="340" y="374">embedded text passed as an arg</text>
+
+  <path class="edge" d="M340,384 L340,410" marker-end="url(#arrow)"/>
+
+  <rect class="filebox" x="110" y="410" width="460" height="44" rx="6"/>
+  <text class="label" x="340" y="428">python3 / python</text>
+  <text class="caption" x="340" y="444">only external dependency, must be on PATH</text>
+</svg>

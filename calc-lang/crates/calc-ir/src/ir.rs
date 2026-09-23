@@ -30,6 +30,9 @@ pub enum Instr {
     /// callee body in the program: the callee is an external symbol the linker
     /// supplies (spec.md §7). Operator-agnostic on purpose — lowering emits it for
     /// `+`/`*` today, but a call-syntax frontend could emit the same node directly.
+    /// `dst` is always allocated, even for a built-in called only for its side
+    /// effect (`print`, session A11) whose value nothing ever reads — see
+    /// `ast_to_ir::lower`'s `Stmt::Print` case.
     CallBuiltin {
         dst: Temp,
         name: String,

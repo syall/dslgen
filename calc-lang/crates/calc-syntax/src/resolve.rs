@@ -59,13 +59,17 @@ fn resolve_expr(
         Expr::Block { stmts, result } => {
             scopes.push(HashMap::new());
             for stmt in stmts {
-                let Stmt::Let { name, value } = stmt;
-                resolve_expr(value, scopes, errors);
-                let scope = scopes.last_mut().expect("scope just pushed");
-                if scope.contains_key(name) {
-                    errors.push(ResolveError::DuplicateBinding { name: name.clone() });
-                } else {
-                    scope.insert(name.clone(), ());
+                match stmt {
+                    Stmt::Let { name, value } => {
+                        resolve_expr(value, scopes, errors);
+                        let scope = scopes.last_mut().expect("scope just pushed");
+                        if scope.contains_key(name) {
+                            errors.push(ResolveError::DuplicateBinding { name: name.clone() });
+                        } else {
+                            scope.insert(name.clone(), ());
+                        }
+                    }
+                    Stmt::Print(inner) => resolve_expr(inner, scopes, errors),
                 }
             }
             resolve_expr(result, scopes, errors);
@@ -116,5 +120,19 @@ mod tests {
     fn allows_shadowing_across_nested_scopes() {
         let ast = parse("{ let x = 1; if x { let x = 2; x } else { 0 } }");
         assert_eq!(resolve(&ast), Ok(()));
+    }
+
+    /// `Stmt::Print` (session A11) resolves its inner expression like any other
+    /// sub-expression, so an unresolved identifier inside `print(...)` is still
+    /// caught — and, unlike `let`, doesn't add anything to the enclosing scope.
+    #[test]
+    fn resolves_into_a_print_statements_argument() {
+        let ast = parse("{ print(x); 0 }");
+        assert_eq!(
+            resolve(&ast),
+            Err(vec![ResolveError::UnresolvedIdentifier {
+                name: "x".to_string()
+            }])
+        );
     }
 }

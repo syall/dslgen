@@ -344,3 +344,144 @@ a field yet, and spec.md §7.2's override layer (`bindings.toml` → `calcc.toml
 flag) is only meaningful once `bindings.toml` (Part B, B6) is real data. Also unchanged
 from A9: call syntax, a data-driven manifest, signature validation, dynamic (vs. static)
 FFI linking, the real link driver (A12).
+
+## A11 — `print(<expr>);` syntax; `Stmt`, not `Expr`; a hand-rolled IPC protocol
+instead of `serde_json`; backend/link support landed anyway
+
+**`print(<expr>);`, not a bare `print <expr>` prefix.** calc-lang's third built-in kind
+(subprocess/IPC, spec.md §7) needed a unary surface, unlike A9/A10's binary operators —
+there's no existing operator to route through. Requiring parens (`"print" "(" <Expr>
+")"` in `calc.lalrpop`) sidesteps picking an arbitrary unary-operator precedence tier,
+at the cost of reading like a function call. It deliberately isn't general call syntax
+in the sense A9 ruled out, though: there's exactly one hardcoded keyword, no callee name
+to resolve, no arity beyond one — the same "operators are the surface" principle, just
+extended to a fixed keyword instead of a symbol.
+
+**`Stmt::Print`, not `Expr::Print` — moved after initially shipping as the latter.**
+The first version of this session made `print` an `Expr`, so it could sit anywhere an
+expression could (`1 + print(x)`, `let y = print(x)`) — matching roadmap.md's own
+"returns it unchanged" framing read literally. Revisited on request: `calc-syntax/
+ast.rs`'s own doc comment states the test this codebase already uses for `Stmt` vs.
+`Expr` — `Stmt` (so far, just `Let`) is for constructs that aren't themselves
+value-producing; A2 deliberately didn't add `Stmt` at all until A3 had a real one.
+`print` is run for a side effect, which is a `Stmt`-shaped thing by that same test. So
+`print(<expr>)` moved into `Stmt`, requiring a trailing `;` like `let` does, and
+lowering moved from `lower_expr`'s top-level `match` into the block statement loop
+(`Stmt::Let { .. } => ..., Stmt::Print(inner) => ...`). Consequence, named explicitly
+when this was discussed: `print(<expr>)` is no longer a complete calc-lang program on
+its own — `Stmt` only ever appears inside `Expr::Block`'s `{ ... }`, alongside a
+mandatory trailing result expression, so it now needs `{ print(x); 0 }` or similar.
+That's consistent with the rest of the language rather than a special case:
+`ParserFrontend::parse` parses one `Expr`, not a separate "program" rule, and `if`/`else`
+already requires braced blocks for its own branches — the same "blocks are the only
+statement-sequencing construct" rule Rust function bodies use. The other side of the
+tradeoff: a bare `print(x)` can no longer appear inside an arithmetic expression
+(`1 + print(x)`) — only as one statement in a block's list — and multiple `print`s can
+now be sequenced directly (`{ print(1); print(2); 0 }`) without threading them through
+throwaway `let` bindings, which was the awkward workaround the `Expr` version left in
+place.
+
+**A new top-level `Program` grammar rule, distinct from `Expr` — the actual parser
+entry point.** Once `print` needed a wrapping `{ ... }` to be a complete program at
+all, that friction was worth removing at the one place it matters: the top level.
+`calc.lalrpop` gains `pub Program: Expr = <stmts:Stmt*> <result:Expr> => ...`, parsed
+via the new `calc::ProgramParser` (`LalrpopFrontend::parse` calls this now, not
+`calc::ExprParser`); `Expr` itself drops `pub` since nothing outside the grammar calls
+it directly anymore. `print(1); 2` is now a complete program, equivalent to
+`{ print(1); 2 }`, without requiring the braces — the top level behaves like an
+*implicit* block, the same "statement sequence, then a mandatory result" shape
+`Block`'s insides already have, just without the delimiters. Backward compatibility
+mattered here: `Program`'s action special-cases an empty `stmts` list to produce the
+bare `result` `Expr` directly, not `Expr::Block { stmts: vec![], .. }` — every existing
+program with no top-level statements (the large majority of this project's tests)
+keeps its exact original AST shape; only programs that actually use top-level
+statements get the `Expr::Block` wrapping, which `resolve`/`lower`/both backends
+already handle correctly (nothing downstream of parsing needed to change at all).
+
+**Considered, implemented, then reverted: making `print`'s call genuinely `void`.**
+Making `print` a `Stmt` (above) left its call still computing and returning a real
+`f64` under the hood — `calc_print` still returned `x` unchanged, `Instr::CallBuiltin`
+still allocated a `dst` `Temp` for it, just one calc-lang's grammar never bound to a
+name. Asked directly whether `print` should evaluate to anything at all, this was
+built out fully: `Instr::CallBuiltin.dst` became `Option<Temp>`, `Builtin.eval`'s type
+became `fn(&[f64]) -> Option<f64>`, `calc_print` changed to `extern "C" fn(f64)` (no
+return), and both backends declared a genuinely return-type-less callee signature when
+`dst` was `None`. It worked, end-to-end, on both backends. But asked directly whether
+the returned value was ever actually *usable* first: no — `Stmt::Print`'s lowering
+never inserted its result into `env` the way `Stmt::Let` does, and no grammar rule
+lets a `Stmt`'s value be referenced afterward, so the value was already completely
+unreachable from calc-lang in the plain `Stmt` design, void or not. The `void` version
+was therefore a pure internal-ABI-correctness nicety with zero observable behavioral
+difference, at the cost of touching the shared IR node every built-in lowers to, both
+backends' codegen, the interpreter's dispatch, and the manifest's `eval` type —
+cross-cutting complexity CLAUDE.md's own "prefer small, focused, incremental changes"
+doesn't justify for an invisible benefit. Reverted in full: `dst` is back to plain
+`Temp` (always allocated, just unbound for `print`), `eval` is back to `fn(&[f64]) ->
+f64`, `calc_print` returns `x` unchanged again, and both backends unconditionally
+declare/read an `f64` return.
+
+**A hand-rolled protocol (plain CLI arg + captured stdout), not `serde_json` over
+stdin, despite roadmap.md's own suggestion.** `calc-runtime/src/lib.rs` must compile
+standalone via a bare `rustc --crate-type=staticlib` invocation with zero `--extern`
+flags (`calc-compiler/build.rs`; established A9, reinforced A10) — every built-in's
+real implementation has to stay dependency-free, because `rustc` follows `lib.rs`'s
+`mod` declarations regardless of Cargo, with no dependency resolution available to
+that raw invocation. Putting `serde_json` in `ipc_runtime.rs` and `mod`-declaring it
+from `lib.rs` would break that build unconditionally, for every kind, not just IPC.
+Alternatives considered: (a) a Cargo-driven build (`cargo rustc`/multiple crate-types)
+replacing the raw `rustc` call, so all three kinds get real dependency access — the
+correct long-term fix, but real build-system work (isolated `--target-dir`, artifact
+discovery, forwarding `--target`/profile/the MSVC static-CRT flag), and squarely what
+A9's own decision log already earmarked for A12 ("the link driver"); (b) `#[cfg]`-gating
+`ipc_runtime` out of just the special build — forks the `BUILTINS` array (`eval` can't
+be cfg'd per-element cleanly) for one built-in; (c) a separate crate for IPC logic,
+reached via a real `--extern` — hits the same artifact-path-discovery problem as (a)
+the moment it needs to be link-able, for no less complexity. Chose: a plain CLI
+argument (`python3 -c <embedded script> <x>`, via `include_str!`) instead of a JSON
+request over stdin, captured via `Command::output()` — still real
+`std::process::Command`/stdio-pipe use, just no serialization library, since a single
+scalar doesn't need one. **Discussed with the user**: none of the three binding kinds
+should be architecturally required to stay dependency-free long-term — that's an
+artifact of the current build mechanism, not a design goal, and fixing it (option (a)
+above) is real, deferred, standing project direction, not scoped to any specific future
+session. Whenever it lands, `ipc_runtime.rs` should switch to a genuine `serde_json`
+request/response protocol specifically to demonstrate the fix actually grants built-ins
+real dependency access.
+
+**Resolving spec.md §14.5–§14.7**: protocol is a plain command-line argument plus
+captured stdout (§14.5); lifecycle is spawn-per-call, matching roadmap.md's own framing
+of a long-lived worker as Part C's job (§14.6); failure (spawn error or non-zero exit)
+is a `panic!` — process-level abort — matching this codebase's existing style for
+invariants with no error-handling story yet (§14.7).
+
+**Backend/link support landed too, not just the interpreter — the opposite of what A10
+forecast.** Because `ipc_runtime.rs` stays dependency-free, `calc_print` compiles under
+the same bare-`rustc` build as `calc_add`/`calc_mul` and lands in the same archive
+(`RUNTIME_LIB`) — a real, self-contained definition, architecturally like kind 1, not
+like kind 2's `sub` (only forward-declared in Rust, defined in a separately linked C
+file). Both `cranelift_backend.rs` and `llvm_backend.rs` already declare/call a
+built-in generically from `calc_runtime::lookup(name)`'s `symbol`/`arity` — neither
+hardcodes built-in names — so no backend code changed at all. One real gap surfaced
+when actually linking a compiled program that calls `print`: on MSVC,
+`std::process::Command`'s Windows implementation needs `ws2_32.lib` (Winsock, pulled in
+by `std`'s networking code even though `print` never opens a socket), `ntdll.lib`
+(native named-pipe I/O, for piping the child's stdio), and `userenv.lib`
+(`std::env::home_dir`) — none of which a hand-built object file's absent
+`/DEFAULTLIB` directives supply, unlike a normal `rustc`-compiled one. `link_stub.rs`
+(previously just `libcmt`/`libvcruntime`/`libucrt`) now names all three explicitly;
+found by hitting `LNK2019` on exactly those symbols, fixed, and verified end-to-end
+(`links_and_runs_a_program_that_calls_the_ipc_builtin`, both backends, asserting the
+relayed `print.py` output and the final exit code). Consequence for A12: since
+`link_stub.rs` already links every built-in kind together, A12's own stated deliverable
+("`calcc build` ... for programs exercising all three built-in kinds at once") is
+already true as of this session — A12's real remaining content is graduating the ad hoc
+bare-`rustc`/`cc` build mechanism to something durable (see the Cargo-driven-build
+alternative above), not making IPC linkable, which no longer needs doing.
+
+**A real, empirical fix, not a design choice**: `run_print_script` tries `python3`
+first, falling back to `python`. Found on this project's own dev machine: `python3`
+resolves to a non-functional Windows "app execution alias" stub (spawns fine, exits
+9009, never runs anything) because `Command::new` doesn't execute `.cmd` shims the way
+a shell does, while a real `python.exe` is also on `PATH`. Both names are tried by
+spawning and checking exit status (a spawn failure alone doesn't distinguish the stub
+case, which spawns successfully).

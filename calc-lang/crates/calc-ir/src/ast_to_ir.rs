@@ -117,11 +117,28 @@ fn lower_expr(
         Expr::Block { stmts, result } => {
             env.push(HashMap::new());
             for stmt in stmts {
-                let Stmt::Let { name, value } = stmt;
-                let value = lower_expr(value, env, instrs, next_temp);
-                env.last_mut()
-                    .expect("scope just pushed")
-                    .insert(name.clone(), value);
+                match stmt {
+                    Stmt::Let { name, value } => {
+                        let value = lower_expr(value, env, instrs, next_temp);
+                        env.last_mut()
+                            .expect("scope just pushed")
+                            .insert(name.clone(), value);
+                    }
+                    Stmt::Print(inner) => {
+                        let arg = lower_expr(inner, env, instrs, next_temp);
+                        let dst = fresh(next_temp);
+                        instrs.push(Instr::CallBuiltin {
+                            dst,
+                            name: "print".to_string(),
+                            args: vec![arg],
+                        });
+                        // `dst` is intentionally left unbound: a statement's value
+                        // (unlike `let`'s) is never reachable by name — `print`'s
+                        // built-in contract of returning its argument unchanged is
+                        // about `calc_print` itself, not something calc-lang syntax
+                        // exposes when it's used this way.
+                    }
+                }
             }
             let result = lower_expr(result, env, instrs, next_temp);
             env.pop();
@@ -212,6 +229,46 @@ mod tests {
             .collect();
         assert_eq!(call_names, ["add", "mul", "sub"]);
         assert_eq!(inline_ops, [BinOp::Div]);
+    }
+
+    /// `print(<expr>);` (session A11) lowers to the same generic `CallBuiltin` node
+    /// as the operator built-ins — its argument is lowered first like any other
+    /// sub-expression, then wrapped in a one-argument call whose result is left
+    /// unbound (a statement's value isn't reachable, unlike `let`'s).
+    #[test]
+    fn print_statement_lowers_to_a_one_argument_builtin_call() {
+        let ast = LalrpopFrontend
+            .parse("{ print(1 + 2); 0 }")
+            .expect("should parse");
+        let Program { body, .. } = lower(&ast);
+
+        assert_eq!(
+            body,
+            Block(vec![
+                Instr::Const {
+                    dst: Temp(0),
+                    value: 1.0
+                },
+                Instr::Const {
+                    dst: Temp(1),
+                    value: 2.0
+                },
+                Instr::CallBuiltin {
+                    dst: Temp(2),
+                    name: "add".to_string(),
+                    args: vec![Temp(0), Temp(1)],
+                },
+                Instr::CallBuiltin {
+                    dst: Temp(3),
+                    name: "print".to_string(),
+                    args: vec![Temp(2)],
+                },
+                Instr::Const {
+                    dst: Temp(4),
+                    value: 0.0
+                },
+            ])
+        );
     }
 
     /// Names an instruction's variant. The `match` has no wildcard arm, so adding a new
