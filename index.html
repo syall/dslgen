@@ -277,10 +277,10 @@
   <p class="sub">Progress through <code>roadmap.md</code>'s session plan for DSL-Generator's hand-built calculator-language toolchain (Part A), its generalization into the <code>dslgen</code> meta-tool (Part B), and advanced polish (Part C).</p>
 
   <div class="stat-band">
-    <div class="stat-num">14<small>/37</small></div>
+    <div class="stat-num">14<small>/39</small></div>
     <div class="stat-body">
-      <div class="stat-label">Required-path sessions complete — 38%</div>
-      <div class="bar-track"><div class="bar-fill" style="width:37.8%"></div></div>
+      <div class="stat-label">Required-path sessions complete — 36%</div>
+      <div class="bar-track"><div class="bar-fill" style="width:35.9%"></div></div>
     </div>
     <div class="stat-next">Next up: <b>A14</b> — generated LSP</div>
   </div>
@@ -290,14 +290,14 @@
     <div class="part-card">
       <h3>Part A — Hand-built calc-lang</h3>
       <p class="desc">One DSL toolchain built entirely by hand, no generation.</p>
-      <div class="part-count"><span>Sessions</span><b>14 / 18</b></div>
-      <div class="bar-track"><div class="bar-fill" style="width:77.8%"></div></div>
+      <div class="part-count"><span>Sessions</span><b>14 / 19</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:73.7%"></div></div>
     </div>
     </a>
     <div class="part-card">
       <h3>Part B — Generalize into dslgen</h3>
       <p class="desc">Extract Part A's code into the generic meta-tool.</p>
-      <div class="part-count"><span>Sessions</span><b>0 / 11</b></div>
+      <div class="part-count"><span>Sessions</span><b>0 / 12</b></div>
       <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
     </div>
     <div class="part-card">
@@ -333,6 +333,7 @@
       <div class="row"><span class="sid">A16</span><span class="row-desc"><b>Cranelift-JIT hot reload.</b> calcc run --hot-reload patches on save.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">A17</span><span class="row-desc"><b>Manual memory strategy.</b> alloc/free declared as built-ins.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">A18</span><span class="row-desc"><b>Scope primitives as built-ins.</b> Optional refactor of A3's resolver.</span><span class="pill opt">Optional</span></div>
+      <div class="row"><span class="sid">A19</span><span class="row-desc"><b>Program test suite generator.</b> Hand-built calc-testgen: scope-aware generated .calc programs, mutants with expected diagnostics, shrinking, optional fuzzing.</span><span class="pill todo">Upcoming</span></div>
     </div>
   </details>
 
@@ -347,6 +348,7 @@
       <div class="row"><span class="sid">B4-ts</span><span class="row-desc"><b>Generate tree-sitter package.</b> Queries generated from the RoleModel; tree-sitter generate and conformance test wired in.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B5</span><span class="row-desc"><b>Generic lowering.</b> A4's pass rewritten to consume role annotations.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B6</span><span class="row-desc"><b>bindings.toml.</b> Manifest parsing/validation for built-ins.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B6-tests</span><span class="row-desc"><b>Generate the program test suite.</b> Generic dslgen-testgen engine driven by grammar.json, the RoleModel, and built-in signatures.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B7</span><span class="row-desc"><b>The code generator.</b> Templates a workspace from grammar + roles + bindings.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B8</span><span class="row-desc"><b>dslgen CLI.</b> new / check / build against a scaffolded project.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B9</span><span class="row-desc"><b>Second DSL.</b> Proves generation generalizes beyond calc-lang.</span><span class="pill todo">Upcoming</span></div>
@@ -362,7 +364,7 @@
       <div class="row"><span class="sid">C1-wasm</span><span class="row-desc"><b>wasm32 target.</b> Optional LLVM-to-wasm build via wasm-ld, gated on §14.19.</span><span class="pill opt">Optional</span></div>
       <div class="row"><span class="sid">C2</span><span class="row-desc"><b>External overrides.</b> calcc.toml / --builtin-path precedence chain.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">C3</span><span class="row-desc"><b>Second memory strategy.</b> Borrow-checked or GC, selectable per DSL.</span><span class="pill todo">Upcoming</span></div>
-      <div class="row"><span class="sid">C4</span><span class="row-desc"><b>Differential testing.</b> Interpreter as oracle against both backends.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">C4</span><span class="row-desc"><b>Differential testing.</b> Interpreter as oracle against both backends, over calc-testgen's generated corpus.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">C5</span><span class="row-desc"><b>Docs consolidation.</b> Order and cross-link the calc-lang/docs series.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">C6</span><span class="row-desc"><b>Decision log.</b> Record how each of §14's open questions was resolved.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">C7</span><span class="row-desc"><b>Dynamic FFI linking.</b> link = "dynamic" FFI built-ins, swappable without re-linking.</span><span class="pill todo">Upcoming</span></div>
@@ -371,7 +373,7 @@
   </details>
 
   <footer>
-    Counts track roadmap.md's <b>required path</b> (37 sessions across Parts A–C) — the four optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A18</code>, <code>C1-wasm</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>1ee7071</code>, "Add generated tree-sitter grammar package to spec and roadmap (A15, B4-ts)") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 → A9 → A13 done, completing Part A's share of the minimum path (A7, A10, A11, and A12, off the minimum path, are also done); B1 → B2 → B4 → B5 → B7 remain.
+    Counts track roadmap.md's <b>required path</b> (39 sessions across Parts A–C) — the four optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A18</code>, <code>C1-wasm</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>50419d4</code>, "Add generated program test suite to spec and roadmap (A19, B6-tests)") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 → A9 → A13 done, completing Part A's share of the minimum path (A7, A10, A11, and A12, off the minimum path, are also done); B1 → B2 → B4 → B5 → B7 remain.
   </footer>
 </div>
 </body>
