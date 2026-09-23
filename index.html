@@ -277,10 +277,10 @@
   <p class="sub">Progress through <code>roadmap.md</code>'s session plan for DSL-Generator's hand-built calculator-language toolchain (Part A), its generalization into the <code>dslgen</code> meta-tool (Part B), and advanced polish (Part C).</p>
 
   <div class="stat-band">
-    <div class="stat-num">14<small>/35</small></div>
+    <div class="stat-num">14<small>/37</small></div>
     <div class="stat-body">
-      <div class="stat-label">Required-path sessions complete — 40%</div>
-      <div class="bar-track"><div class="bar-fill" style="width:40%"></div></div>
+      <div class="stat-label">Required-path sessions complete — 38%</div>
+      <div class="bar-track"><div class="bar-fill" style="width:37.8%"></div></div>
     </div>
     <div class="stat-next">Next up: <b>A14</b> — generated LSP</div>
   </div>
@@ -290,14 +290,14 @@
     <div class="part-card">
       <h3>Part A — Hand-built calc-lang</h3>
       <p class="desc">One DSL toolchain built entirely by hand, no generation.</p>
-      <div class="part-count"><span>Sessions</span><b>14 / 17</b></div>
-      <div class="bar-track"><div class="bar-fill" style="width:82.4%"></div></div>
+      <div class="part-count"><span>Sessions</span><b>14 / 18</b></div>
+      <div class="bar-track"><div class="bar-fill" style="width:77.8%"></div></div>
     </div>
     </a>
     <div class="part-card">
       <h3>Part B — Generalize into dslgen</h3>
       <p class="desc">Extract Part A's code into the generic meta-tool.</p>
-      <div class="part-count"><span>Sessions</span><b>0 / 10</b></div>
+      <div class="part-count"><span>Sessions</span><b>0 / 11</b></div>
       <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
     </div>
     <div class="part-card">
@@ -329,9 +329,10 @@
       <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a12-the-link-driver.md" target="_blank" rel="noopener"><span class="sid">A12</span><span class="row-desc"><b>Link driver.</b> Link units with rustc-derived and manifest-declared deps, a pre-link symbol check, and IPC bundles embedded in the executable. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
       <a class="row is-done" href="https://github.com/syall/dslgen/blob/main/calc-lang/docs/a13-calcc-cli-surface.md" target="_blank" rel="noopener"><span class="sid">A13</span><span class="row-desc"><b>calcc CLI.</b> clap-based build/run --interpret/check, --backend threaded through, plus --verbose and --keep-object for build. <span class="doc-icon">↗ docs</span></span><span class="pill done">Done</span></a>
       <div class="row"><span class="sid">A14</span><span class="row-desc"><b>Generated LSP.</b> calc-lsp: diagnostics, semantic tokens, hover/definition.</span><span class="pill next">Next</span></div>
-      <div class="row"><span class="sid">A15</span><span class="row-desc"><b>Cranelift-JIT hot reload.</b> calcc run --hot-reload patches on save.</span><span class="pill todo">Upcoming</span></div>
-      <div class="row"><span class="sid">A16</span><span class="row-desc"><b>Manual memory strategy.</b> alloc/free declared as built-ins.</span><span class="pill todo">Upcoming</span></div>
-      <div class="row"><span class="sid">A17</span><span class="row-desc"><b>Scope primitives as built-ins.</b> Optional refactor of A3's resolver.</span><span class="pill opt">Optional</span></div>
+      <div class="row"><span class="sid">A15</span><span class="row-desc"><b>tree-sitter grammar.</b> Hand-built tree-sitter-calc package for editors and tools, with a conformance test against the compiler's parser.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A16</span><span class="row-desc"><b>Cranelift-JIT hot reload.</b> calcc run --hot-reload patches on save.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A17</span><span class="row-desc"><b>Manual memory strategy.</b> alloc/free declared as built-ins.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">A18</span><span class="row-desc"><b>Scope primitives as built-ins.</b> Optional refactor of A3's resolver.</span><span class="pill opt">Optional</span></div>
     </div>
   </details>
 
@@ -343,6 +344,7 @@
       <div class="row"><span class="sid">B2</span><span class="row-desc"><b>Extract dslgen-backend.</b> Backend trait, interpreter, link driver, IPC shim as a shared crate.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B3</span><span class="row-desc"><b>Extract dslgen-lsp.</b> tower-lsp scaffolding parameterized by a LanguageModel trait.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B4</span><span class="row-desc"><b>RoleModel.</b> Role-annotation parsing and validation.</span><span class="pill todo">Upcoming</span></div>
+      <div class="row"><span class="sid">B4-ts</span><span class="row-desc"><b>Generate tree-sitter package.</b> Queries generated from the RoleModel; tree-sitter generate and conformance test wired in.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B5</span><span class="row-desc"><b>Generic lowering.</b> A4's pass rewritten to consume role annotations.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B6</span><span class="row-desc"><b>bindings.toml.</b> Manifest parsing/validation for built-ins.</span><span class="pill todo">Upcoming</span></div>
       <div class="row"><span class="sid">B7</span><span class="row-desc"><b>The code generator.</b> Templates a workspace from grammar + roles + bindings.</span><span class="pill todo">Upcoming</span></div>
@@ -369,7 +371,7 @@
   </details>
 
   <footer>
-    Counts track roadmap.md's <b>required path</b> (35 sessions across Parts A–C) — the four optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A17</code>, <code>C1-wasm</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>5f4a97c</code>, "Add A13: calcc CLI surface") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 → A9 → A13 done, completing Part A's share of the minimum path (A7, A10, A11, and A12, off the minimum path, are also done); B1 → B2 → B4 → B5 → B7 remain.
+    Counts track roadmap.md's <b>required path</b> (37 sessions across Parts A–C) — the four optional side branches (<code>A1-pest</code>, <code>A1-custom</code>, <code>A18</code>, <code>C1-wasm</code>) are shown but excluded from the denominator, per roadmap.md's own framing of them as "entirely optional." Status is derived from git history (commits through <code>1ee7071</code>, "Add generated tree-sitter grammar package to spec and roadmap (A15, B4-ts)") and each session's <code>calc-lang/docs/</code> page. Suggested minimum path so far: A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 → A9 → A13 done, completing Part A's share of the minimum path (A7, A10, A11, and A12, off the minimum path, are also done); B1 → B2 → B4 → B5 → B7 remain.
   </footer>
 </div>
 </body>
