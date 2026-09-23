@@ -102,12 +102,29 @@ impl LinkUnit {
     }
 }
 
+/// `calcc build`'s link-step flags (session A13). Everything else that shapes a link
+/// is data (the manifest, `CC`), or belongs to a later session: see `DECISIONS.md`'s
+/// A13 entry for the options deliberately left out.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LinkOptions {
+    /// `--verbose`: print the exact linker command line to stderr before running it.
+    pub verbose: bool,
+    /// `--keep-object`: leave the program's object file and the bundles object next
+    /// to the output instead of deleting them, and print their paths.
+    pub keep_object: bool,
+}
+
 /// Links `object_bytes` (as produced by a `Backend`) into a runnable executable at
 /// `output_path`, embedding `ipc_bundles` (a blob from
 /// `calc_builtins::bundle_format::pack`; `runtime_deps::prepare` builds it). Returns
 /// the executable's actual path: `cl.exe` always gives its output an extension, so on
 /// MSVC an extensionless `output_path` lands at `output_path` + `.exe`.
-pub fn link(object_bytes: &[u8], ipc_bundles: &[u8], output_path: &Path) -> io::Result<PathBuf> {
+pub fn link(
+    object_bytes: &[u8],
+    ipc_bundles: &[u8],
+    output_path: &Path,
+    options: &LinkOptions,
+) -> io::Result<PathBuf> {
     let target = artifacts::TARGET;
     let compiler = cc::Build::new()
         .target(target)
@@ -137,10 +154,14 @@ pub fn link(object_bytes: &[u8], ipc_bundles: &[u8], output_path: &Path) -> io::
     };
     let object_path = output_path.with_extension(object_extension);
     std::fs::write(&object_path, object_bytes)?;
-    let cleanup = TempFile(&object_path);
+    let cleanup = (!options.keep_object).then(|| TempFile(&object_path));
     let bundles_path = output_path.with_extension(format!("bundles.{object_extension}"));
     std::fs::write(&bundles_path, bundle_object(target, ipc_bundles)?)?;
-    let bundles_cleanup = TempFile(&bundles_path);
+    let bundles_cleanup = (!options.keep_object).then(|| TempFile(&bundles_path));
+    if options.keep_object {
+        println!("kept {}", object_path.display());
+        println!("kept {}", bundles_path.display());
+    }
 
     let exe_path = if flavor == LinkFlavor::Msvc && output_path.extension().is_none() {
         output_path.with_extension("exe")
@@ -162,6 +183,9 @@ pub fn link(object_bytes: &[u8], ipc_bundles: &[u8], output_path: &Path) -> io::
         &exe_path,
     ));
 
+    if options.verbose {
+        eprintln!("link: {}", command_line(&cmd));
+    }
     let output = cmd.output()?;
     drop(cleanup);
     drop(bundles_cleanup);
@@ -370,7 +394,7 @@ fn link_args(
     args
 }
 
-/// `cmd` as a copy-pasteable line, for error messages. (`Command`'s `Debug` output
+/// `cmd` as a copy-pasteable line, for error messages and `--verbose`. (`Command`'s `Debug` output
 /// would also dump every environment variable set on it.)
 fn command_line(cmd: &Command) -> String {
     std::iter::once(cmd.get_program())
@@ -669,9 +693,14 @@ mod tests {
     #[test]
     fn a_linker_failure_shows_the_command_and_its_output() {
         let out = std::env::temp_dir().join("calc_a12_garbage");
-        let err = link(b"not an object file", &no_bundles(), &out)
-            .unwrap_err()
-            .to_string();
+        let err = link(
+            b"not an object file",
+            &no_bundles(),
+            &out,
+            &LinkOptions::default(),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.starts_with("linker exited with"), "{err}");
         assert!(err.contains("command: "), "{err}");
         assert!(err.contains(artifacts::RUNTIME_LIB), "{err}");
@@ -711,7 +740,8 @@ mod tests {
         let ast = LalrpopFrontend.parse(src).expect("should parse");
         resolve(&ast).expect("should resolve");
         let program = calc_ir::lower(&ast);
-        let prepared = crate::runtime_deps::prepare(&program).expect("run-time deps check out");
+        let prepared =
+            crate::runtime_deps::prepare(&program, false).expect("run-time deps check out");
         crate::backend::enabled()
             .iter()
             .map(|backend| {
@@ -719,8 +749,13 @@ mod tests {
                 let dir = std::env::temp_dir().join(format!("calc_a12_{name}_{}", backend.name()));
                 let _ = std::fs::remove_dir_all(&dir);
                 std::fs::create_dir_all(dir.join("run")).unwrap();
-                let exe = link(&object, &prepared.bundles, &dir.join("prog"))
-                    .expect("link should succeed");
+                let exe = link(
+                    &object,
+                    &prepared.bundles,
+                    &dir.join("prog"),
+                    &LinkOptions::default(),
+                )
+                .expect("link should succeed");
                 let moved = dir.join("run").join(exe.file_name().unwrap());
                 std::fs::rename(&exe, &moved).unwrap();
                 let output = Command::new(&moved)

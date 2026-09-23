@@ -1,10 +1,15 @@
-//! calcc — the calc-lang compiler CLI (spec.md §11). `run --interpret` (session A5)
-//! and `build [--backend=<name>]` (sessions A6–A8) are the only subcommands so far:
-//! both share the parse → resolve → lower prefix, then either interpret the IR
-//! directly or hand it to whichever `backend::Backend` `--backend` selected, then
-//! `runtime_deps` and `link` (session A12). A real CLI-argument crate (`clap`) and a
-//! `check` subcommand land in A13 — hand-rolled `env::args()` parsing is enough for
-//! two subcommands.
+//! calcc — the calc-lang compiler CLI (spec.md §11; session A13). Three subcommands,
+//! each running a longer prefix of one pipeline:
+//!
+//! * `check <path>` — parse → resolve, then stop (diagnostics only);
+//! * `run --interpret <path>` — … → lower → interpret the IR (session A5);
+//! * `build [--backend=<name>] <path> -o <output>` — … → lower → codegen via the
+//!   selected `backend::Backend` (A6–A8) → `runtime_deps` → `link` (A12).
+//!
+//! Arguments are parsed by `clap`'s derive API: the `Cli`/`Command` types below *are*
+//! the CLI's definition, and their doc comments are its `--help` text. Usage errors
+//! exit with code 2 (clap's convention), compile errors with code 1. See
+//! `calc-lang/docs/a13-calcc-cli-surface.md`.
 
 mod backend;
 #[cfg(feature = "backend-cranelift")]
@@ -14,55 +19,95 @@ mod link;
 mod llvm_backend;
 mod runtime_deps;
 
-use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use calc_ir::{interpret, lower, Program, Value};
+use calc_ir::{interpret, lower, Value};
 use calc_syntax::lalrpop_frontend::LalrpopFrontend;
-use calc_syntax::{resolve, ParserFrontend};
+use calc_syntax::{resolve, Expr, ParserFrontend};
+use clap::{Parser, Subcommand};
+
+/// The calc-lang compiler.
+#[derive(Parser)]
+#[command(name = "calcc", bin_name = "calcc", version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Compile a program to a native executable.
+    Build {
+        /// Codegen backend: `cranelift` or `llvm`, among those compiled into this
+        /// calcc. Optional when only one is.
+        #[arg(long, value_name = "NAME")]
+        backend: Option<String>,
+        /// The `.calc` source file.
+        path: PathBuf,
+        /// Where to write the executable (`.exe` is added on Windows if missing).
+        #[arg(short = 'o', value_name = "OUTPUT")]
+        output: PathBuf,
+        /// Print each step's choices and external commands (backend, run-time
+        /// dependency probes, bundles, the linker command line) to stderr.
+        #[arg(long)]
+        verbose: bool,
+        /// Keep the intermediate object files next to the output.
+        #[arg(long)]
+        keep_object: bool,
+    },
+    /// Run a program without compiling it to an executable.
+    Run {
+        /// Run it with the debug interpreter (spec.md §9.1). Required: the
+        /// interpreter is a development aid, not the default way to run a program.
+        #[arg(long, required = true)]
+        interpret: bool,
+        /// The `.calc` source file.
+        path: PathBuf,
+    },
+    /// Parse and check a program without running or compiling it.
+    Check {
+        /// The `.calc` source file.
+        path: PathBuf,
+    },
+}
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
-    match args.as_slice() {
-        [cmd, flag, path] if cmd == "run" && flag == "--interpret" => run_interpret(path),
-        [cmd, rest @ ..] if cmd == "build" => match parse_build_args(rest) {
-            Some((backend_name, path, out)) => build(backend_name, path, out),
-            None => usage(),
+    match Cli::parse().command {
+        Command::Build {
+            backend,
+            path,
+            output,
+            verbose,
+            keep_object,
+        } => build(
+            backend.as_deref(),
+            &path,
+            &output,
+            link::LinkOptions {
+                verbose,
+                keep_object,
+            },
+        ),
+        // `interpret` is always true here (clap requires it); it's a field so A15's
+        // `--hot-reload` can become the other choice of one required mode.
+        Command::Run { interpret: _, path } => run_interpret(&path),
+        Command::Check { path } => match parse_and_resolve(&path) {
+            Some(_) => ExitCode::SUCCESS,
+            None => ExitCode::FAILURE,
         },
-        _ => usage(),
     }
 }
 
-fn usage() -> ExitCode {
-    let names: Vec<&str> = backend::enabled().iter().map(|b| b.name()).collect();
-    eprintln!(
-        "usage: calcc run --interpret <path>\n       calcc build [--backend=<{}>] <path> -o <output>",
-        names.join("|")
-    );
-    ExitCode::FAILURE
-}
-
-/// Splits `build`'s arguments into (optional backend name, source path, output path).
-fn parse_build_args(args: &[String]) -> Option<(Option<&str>, &str, &str)> {
-    match args {
-        [path, o, out] if o == "-o" => Some((None, path, out)),
-        [backend, path, o, out] if o == "-o" => {
-            Some((Some(backend.strip_prefix("--backend=")?), path, out))
-        }
-        _ => None,
-    }
-}
-
-/// Shared front end for both subcommands: read the source file, then parse →
-/// resolve → lower it into `calc-ir`'s `Program`, printing `calcc`-style
-/// diagnostics and returning `None` on the first failure.
-fn compile_to_ir(path: &str) -> Option<Program> {
+/// The front end every subcommand shares (all of `check`): read the source file,
+/// then parse → resolve it, printing `calcc`-style diagnostics and returning `None`
+/// on the first failing stage.
+fn parse_and_resolve(path: &Path) -> Option<Expr> {
     let src = match fs::read_to_string(path) {
         Ok(src) => src,
         Err(err) => {
-            eprintln!("calcc: couldn't read {path}: {err}");
+            eprintln!("calcc: couldn't read {}: {err}", path.display());
             return None;
         }
     };
@@ -84,13 +129,14 @@ fn compile_to_ir(path: &str) -> Option<Program> {
         return None;
     }
 
-    Some(lower(&ast))
+    Some(ast)
 }
 
-fn run_interpret(path: &str) -> ExitCode {
-    let Some(program) = compile_to_ir(path) else {
+fn run_interpret(path: &Path) -> ExitCode {
+    let Some(ast) = parse_and_resolve(path) else {
         return ExitCode::FAILURE;
     };
+    let program = lower(&ast);
     let Value::Number(result) = interpret(&program);
     println!("{result}");
     ExitCode::SUCCESS
@@ -98,7 +144,12 @@ fn run_interpret(path: &str) -> ExitCode {
 
 /// `backend_name` is `--backend`'s value, if given; `backend::select` resolves it (or
 /// the implicit default) among the backends compiled into this build.
-fn build(backend_name: Option<&str>, path: &str, out: &str) -> ExitCode {
+fn build(
+    backend_name: Option<&str>,
+    path: &Path,
+    out: &Path,
+    options: link::LinkOptions,
+) -> ExitCode {
     let backend = match backend::select(backend_name) {
         Ok(backend) => backend,
         Err(err) => {
@@ -106,9 +157,13 @@ fn build(backend_name: Option<&str>, path: &str, out: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let Some(program) = compile_to_ir(path) else {
+    if options.verbose {
+        eprintln!("backend: {}", backend.name());
+    }
+    let Some(ast) = parse_and_resolve(path) else {
         return ExitCode::FAILURE;
     };
+    let program = lower(&ast);
 
     let object_bytes = match backend.compile(&program) {
         Ok(bytes) => bytes,
@@ -118,7 +173,7 @@ fn build(backend_name: Option<&str>, path: &str, out: &str) -> ExitCode {
         }
     };
 
-    let prepared = match runtime_deps::prepare(&program) {
+    let prepared = match runtime_deps::prepare(&program, options.verbose) {
         Ok(prepared) => prepared,
         Err(err) => {
             eprintln!("calcc: {err}");
@@ -126,7 +181,7 @@ fn build(backend_name: Option<&str>, path: &str, out: &str) -> ExitCode {
         }
     };
 
-    match link::link(&object_bytes, &prepared.bundles, Path::new(out)) {
+    match link::link(&object_bytes, &prepared.bundles, out, &options) {
         Ok(exe_path) => {
             println!("wrote {}", exe_path.display());
             for note in &prepared.notes {

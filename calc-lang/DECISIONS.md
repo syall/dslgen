@@ -641,3 +641,60 @@ probed if it declares a probe, rather than the probe being silently skipped.
 - embedding or installing the runtime archive so `calcc` works outside its build tree
   → unscheduled;
 - `--verbose`/`--keep-object` → A13's CLI.
+
+## A13 — `clap` derive; `--backend` stays `select`'s job; `--interpret` stays mandatory
+
+**`clap`'s derive API, over the builder API or hand-rolled `env::args()`.** With three
+subcommands and flags in any order, the old slice patterns (`[cmd, flag, path]`) no
+longer fit: `-o` had to come last, `--backend` first, and there was no `--help`. The
+derive API writes the CLI as two plain types (`Cli`, `Command`) whose doc comments are
+the help text, so the CLI's definition and its documentation can't drift. The
+builder API does the same at run time; nothing in `calcc`'s CLI is decided at run
+time, so derive is simpler to read. Usage errors now exit with 2 (clap's convention),
+separate from compile errors' 1.
+
+**`--backend` stays a plain string checked by `backend::select`**, not a clap
+`ValueEnum`/`value_parser`. `select` already tells "unknown backend" apart from
+"known, but this build left it out — rebuild with `--features backend-llvm`" (A8).
+Clap's generic "invalid value" message would lose that. So its help text is static,
+and a wrong value gets `select`'s message listing what's actually compiled in.
+
+**`run` requires `--interpret`.** spec.md §9.1 says the interpreter is explicitly not
+the default way to run a program, so bare `calcc run` is a usage error rather than a
+silent interpret. A15 adds `--hot-reload` as the other mode; the two become a
+required, mutually exclusive clap `ArgGroup` then, not now (a group of one is noise).
+`run` takes no `--backend`: the interpreter has none, and hot reload is Cranelift-only
+(§9.2). Leaving bare `run` undefined also keeps room for a future default.
+
+**`check` = parse + resolve.** §11 says "parse/typecheck only", but calc-lang has one
+value type (`f64`), so resolution is the only semantic check that exists. `check` runs
+exactly the front end the other two subcommands share (`parse_and_resolve`), is
+silent on success (the Unix convention: `cc -fsyntax-only`, `cargo check`'s exit
+code), and exits 1 with diagnostics otherwise. No type checker was invented for it.
+
+**`-o` stays required**, as in §11's `calcc build ... -o program`; no default output
+name (`a.out`, the source's stem) was invented.
+
+**`--verbose` / `--keep-object`, picked up from A12's deferral**, are `build`-only:
+`build` is the only subcommand that runs other programs or writes intermediate files.
+`--verbose` prints to stderr (stdout keeps `wrote …`/`note: …`/`kept …`) at every
+point where `calcc` makes a choice or runs another program: the selected backend,
+each run-time dependency probe and packed bundle (`runtime_deps::prepare`), and the
+exact linker command line (`link::LinkOptions`). `--keep-object` keeps the program's
+object file and the bundles object next to the output. Not threaded: `check` (runs
+nothing), and `run --interpret`, whose only subprocesses are IPC built-ins spawned
+inside `calc-runtime`, which compiled executables share and which has no channel for
+a flag (it would need an env var or global state). Deferred.
+
+**`LinkOptions` gets exactly those two fields.** Considered and left out:
+- choosing the linker: `CC` already does it, through the `cc` crate;
+- a target triple: C8, since it changes codegen too;
+- static vs. dynamic FFI libraries: C7, per built-in in the manifest;
+- extra library search paths or swapping implementations: C2;
+- raw extra linker arguments (`--link-arg`): not in §11, and nothing needs them;
+- debug info / stripping: neither backend emits debug info yet;
+- a temp directory for intermediates: they stay next to the output, where
+  `--keep-object` leaves them.
+
+**Not done**: `--hot-reload` (A15); line:column diagnostics (byte offsets stay; not in
+§11); the `dslgen` meta-tool CLI (B8).

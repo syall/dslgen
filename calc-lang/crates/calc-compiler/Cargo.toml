@@ -23,6 +23,7 @@ target-lexicon = "0.13.5"
 object = { version = "0.39.1", default-features = false, features = ["write", "read"] }
 cc = "1.4.6"
 inkwell = { version = "0.10", default-features = false, features = ["llvm21-1", "target-x86"], optional = true }
+clap = { version = "4.6.7", features = ["derive"] }
 
 # Each codegen backend is a Cargo feature (spec.md §8.1), so a build pulls in only the
 # backends it asks for. Cranelift is pure Rust and on by default (spec.md §14 #4, see

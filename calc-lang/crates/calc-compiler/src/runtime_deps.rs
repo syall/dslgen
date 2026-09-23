@@ -32,7 +32,9 @@ pub struct Prepared {
 }
 
 /// Checks, packs and describes the run-time dependencies of `program`'s built-ins.
-pub fn prepare(program: &Program) -> io::Result<Prepared> {
+/// With `verbose` (`calcc build --verbose`), prints each probe command it runs and
+/// each bundle it packs to stderr.
+pub fn prepare(program: &Program, verbose: bool) -> io::Result<Prepared> {
     let family = crate::link::target_family(artifacts::TARGET);
     let mut packed: Vec<(&str, Vec<BundleFile>)> = Vec::new();
     let mut notes = Vec::new();
@@ -41,12 +43,15 @@ pub fn prepare(program: &Program) -> io::Result<Prepared> {
             continue;
         };
         let bundle_dir = bundle.map(|name| Path::new(artifacts::IPC_BUNDLES_DIR).join(name));
-        check_command(builtin, family, bundle_dir.as_deref())?;
+        check_command(builtin, family, bundle_dir.as_deref(), verbose)?;
         let mut sizes = String::new();
         if let (Some(name), Some(dir)) = (bundle, &bundle_dir) {
             let files = read_bundle(dir)?;
             let bytes: usize = files.iter().map(|f| f.bytes.len()).sum();
             sizes = format!(": {} files, {bytes} bytes", files.len());
+            if verbose {
+                eprintln!("bundle: {name} ({} files, {bytes} bytes)", files.len());
+            }
             packed.push((name, files));
         }
         for requirement in builtin.runtime_requirements(family) {
@@ -98,7 +103,12 @@ fn used_builtins(program: &Program) -> Vec<&'static Builtin> {
 /// Confirms `builtin`'s command for `family` is well-formed and can run: it refers to
 /// `{bundle}` exactly when the built-in declares a bundle; a program inside the
 /// bundle exists there; and its probe, if any, exits 0.
-fn check_command(builtin: &Builtin, family: &str, bundle_dir: Option<&Path>) -> io::Result<()> {
+fn check_command(
+    builtin: &Builtin,
+    family: &str,
+    bundle_dir: Option<&Path>,
+    verbose: bool,
+) -> io::Result<()> {
     let command = builtin.ipc_command(family).ok_or_else(|| {
         io::Error::other(format!(
             "built-in `{}` declares no {family} command",
@@ -143,6 +153,9 @@ fn check_command(builtin: &Builtin, family: &str, bundle_dir: Option<&Path>) -> 
         .chain(probe.iter().copied())
         .collect::<Vec<_>>()
         .join(" ");
+    if verbose {
+        eprintln!("probe: {shown} (built-in `{}`)", builtin.name);
+    }
     let failure = match Command::new(&resolved.program)
         .args(probe)
         .envs(resolved.env.iter().map(|(k, v)| (k, v)))
@@ -225,7 +238,7 @@ mod tests {
 
     #[test]
     fn a_program_without_ipc_builtins_needs_nothing_at_run_time() {
-        let prepared = prepare(&lower("1 + 2 * 3 - 4")).unwrap();
+        let prepared = prepare(&lower("1 + 2 * 3 - 4"), false).unwrap();
         assert!(prepared.notes.is_empty());
         assert_eq!(bundle_format::parse(&prepared.bundles), Some(Vec::new()));
     }
@@ -234,7 +247,11 @@ mod tests {
     /// naming exactly the interpreter this platform will run.
     #[test]
     fn a_program_calling_print_embeds_its_bundle_and_reports_it() {
-        let prepared = prepare(&lower("{ if 1 { print(1); 2 } else { print(3); 4 } }")).unwrap();
+        let prepared = prepare(
+            &lower("{ if 1 { print(1); 2 } else { print(3); 4 } }"),
+            false,
+        )
+        .unwrap();
         let bundles = bundle_format::parse(&prepared.bundles).unwrap();
         assert_eq!(bundles.len(), 1);
         let paths: Vec<_> = bundles[0].files.iter().map(|f| f.path.as_str()).collect();
@@ -283,7 +300,7 @@ mod tests {
     #[test]
     fn a_command_that_doesnt_run_fails_the_build() {
         let builtin = fake("calc-no-such-interpreter", Some(&["--version"]), None);
-        let err = check_command(&builtin, "unix", None)
+        let err = check_command(&builtin, "unix", None, false)
             .unwrap_err()
             .to_string();
         assert!(
@@ -299,9 +316,9 @@ mod tests {
     fn a_program_inside_the_bundle_must_exist_there() {
         let dir = Path::new(artifacts::IPC_BUNDLES_DIR).join("print");
         let present = fake("{bundle}/__main__.py", None, Some("print"));
-        check_command(&present, "unix", Some(&dir)).unwrap();
+        check_command(&present, "unix", Some(&dir), false).unwrap();
         let missing = fake("{bundle}/missing", None, Some("print"));
-        let err = check_command(&missing, "unix", Some(&dir))
+        let err = check_command(&missing, "unix", Some(&dir), false)
             .unwrap_err()
             .to_string();
         assert!(err.contains("which isn't in its bundle"), "{err}");
@@ -314,7 +331,7 @@ mod tests {
     fn a_program_inside_the_bundle_is_probed_too() {
         let dir = Path::new(artifacts::IPC_BUNDLES_DIR).join("print");
         let builtin = fake("{bundle}/__main__.py", Some(&["--version"]), Some("print"));
-        let err = check_command(&builtin, "unix", Some(&dir))
+        let err = check_command(&builtin, "unix", Some(&dir), false)
             .unwrap_err()
             .to_string();
         assert!(err.contains("failed on this machine"), "{err}");
@@ -322,7 +339,7 @@ mod tests {
 
     #[test]
     fn referring_to_a_bundle_the_builtin_doesnt_declare_fails_the_build() {
-        let err = check_command(&fake("{bundle}/helper", None, None), "unix", None)
+        let err = check_command(&fake("{bundle}/helper", None, None), "unix", None, false)
             .unwrap_err()
             .to_string();
         assert!(
@@ -334,9 +351,14 @@ mod tests {
     #[test]
     fn a_bundle_nothing_refers_to_fails_the_build() {
         let dir = Path::new(artifacts::IPC_BUNDLES_DIR).join("print");
-        let err = check_command(&fake("python3", None, Some("print")), "unix", Some(&dir))
-            .unwrap_err()
-            .to_string();
+        let err = check_command(
+            &fake("python3", None, Some("print")),
+            "unix",
+            Some(&dir),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
             err.contains("declares bundle `print`, but its unix command never refers to {bundle}"),
             "{err}"

@@ -301,6 +301,7 @@ mod tests {
             object_bytes,
             &calc_builtins::bundle_format::pack(&[]),
             &out_path,
+            &link::LinkOptions::default(),
         )
         .expect("link should succeed");
         let status = Command::new(&exe_path)

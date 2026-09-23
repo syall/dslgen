@@ -105,4 +105,13 @@ Read in order:
     per-user cache on first run; and which platforms are tested, supported by
     construction, or deferred (with before/after architecture diagrams).
 
+14. [a13-calcc-cli-surface.md](a13-calcc-cli-surface.md) — the compiler driver: why
+    `check`, `run --interpret` and `build` are three prefixes of one pipeline; `clap`'s
+    derive API explained from scratch (subcommands as an enum, doc comments as `--help`);
+    why `--backend` values are still checked by `backend::select` rather than clap;
+    exit-code and stdout/stderr conventions; why `run` requires `--interpret` (and how
+    A15's `--hot-reload` will join it); `--verbose` showing the real linker command
+    line and `--keep-object` keeping the object files; and testing a CLI by running its
+    binary.
+
 More pages land as later sessions in [../../roadmap.md](../../roadmap.md) land.
