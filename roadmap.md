@@ -56,7 +56,8 @@ and fills in anything left uncovered.
 
 No code generation anywhere in Part A. Every file is written by hand for this one DSL.
 Goal: a working `calcc` (compiler), `calc-lsp` (language server), and
-`tree-sitter-calc` (tree-sitter grammar package for editors and tools) for a small
+`tree-sitter-calc` (tree-sitter grammar package for editors and tools), plus
+`calc-testgen` (a generator of test programs for all three), for a small
 calculator language with variables, `if`/`else`, and a couple of built-in functions.
 
 ### A0. Workspace setup & parser-library decision
@@ -386,8 +387,45 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   direct data-structure manipulation; A3's existing tests still pass unchanged,
   proving the refactor is behavior-preserving.
 
+### A19. Hand-built program test suite generator (`calc-testgen`)
+
+- **Spec refs**: §10.2, §8.1 (last bullet), §9.1
+- **Prereqs**: A3 (scopes, for scope-aware generation), A5 (interpreter, for golden
+  results), A13 (`calcc check`), A15 (the tree-sitter conformance test, as one more
+  oracle)
+- **Rust you'll learn**: the `proptest` crate — writing `Strategy`s for recursive
+  data (`prop_recursive`), threading generation state such as the names in scope
+  through `prop_flat_map`, and the shrinking you get for free once a generator is a
+  `Strategy`; implementing `Display` as a pretty-printer for the AST; golden-file
+  tests over a directory of committed files; and, optionally, a `cargo-fuzz` target
+  (nightly-only, kept outside the workspace so plain `cargo test` never needs it).
+- **Compiler/tooling you'll learn**: how compilers get tested beyond hand-written
+  examples — random program generation in the tradition of Csmith, and why the hard
+  part is generating *meaningful* programs, not merely parseable ones (here: only
+  referencing names a `let` has bound in an enclosing block, which is A3's scope model
+  run in reverse); the **oracle problem** (a generated program has no hand-written
+  expected output, so the test is agreement — round-trip, accept/reject, golden
+  interpreter results, frontend ↔ tree-sitter agreement); mutation as a way to
+  generate negative tests with known expected diagnostics; shrinking a failure to a
+  minimal reproducer; and where coverage-guided fuzzing fits (finding crashes in the
+  parser and resolver from random bytes) versus where it doesn't (it knows nothing
+  about what a valid program means).
+- **Deliverable**: a `calc-testgen` crate, written by hand for `calc-lang`'s AST (the
+  grammar-driven, generic version is B6-tests): a scope-aware generator of valid
+  programs covering every construct (`let`, `print`, `if`/`else`, blocks, arithmetic,
+  and each built-in kind, with bounded depth and weights); mutation operators for
+  parse errors, unresolved identifiers, and duplicate bindings, each carrying its
+  expected diagnostic; the oracles from spec.md §10.2 that exist at this point
+  (accept/reject, round-trip, golden interpreter results, and A15's conformance
+  check); a committed corpus under `crates/calc-testgen/corpus/` plus a fixed-seed
+  batch, both run under plain `cargo test`; the `calc-testgen generate`/`check`/
+  `promote` CLI from §11; and at least one real bug found (or a deliberately
+  injected one caught) and reported as a shrunk program. The differential oracle
+  across both backends is C4's job and runs over this session's corpus. Optionally,
+  a `cargo-fuzz` target over the LALRPOP frontend seeded from the corpus.
+
 At the end of Part A you have a complete, working, hand-built compiler + LSP +
-tree-sitter grammar package for one DSL — everything spec.md's architecture calls for at Level 2, built without Level 1.
+tree-sitter grammar package + program test suite generator for one DSL — everything spec.md's architecture calls for at Level 2, built without Level 1.
 
 ---
 
@@ -405,8 +443,9 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 - **Compiler/tooling you'll learn**: how to identify a library boundary inside code
   that wasn't written with one in mind; the actual line spec.md draws between shared
   infrastructure (IR, `Backend` impls, interpreter, LSP scaffolding, IPC shim, the
-  role → tree-sitter-capture mapping) and per-DSL generated code (grammar, AST,
-  lowering, role annotations, builtin decls, `grammar.js` and its generated queries).
+  role → tree-sitter-capture mapping, A19's program generator and oracles) and
+  per-DSL generated code (grammar, AST, lowering, role annotations, builtin decls,
+  `grammar.js` and its generated queries).
 - **Deliverable**: a short written map of every file from Part A into "generic
   (→ `dslgen-backend`/`dslgen-lsp`)" or "per-DSL (→ generated per project)".
 
@@ -509,10 +548,37 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   primitives (A17/A18) alike — reproduces the same generation output as the hardcoded
   version.
 
+### B6-tests. Generate the program test suite
+
+- **Spec refs**: §10.2, §6.2, §7 (signatures)
+- **Prereqs**: B4 (`RoleModel`), B4-ts (`grammar.json` and the same-named-node
+  check), B6 (built-in signatures), A19
+- **Rust you'll learn**: reading tree-sitter's `src/grammar.json` with `serde_json`
+  into a small grammar type (`SEQ`/`CHOICE`/`REPEAT`/`SYMBOL`/`PATTERN`/`PREC`...),
+  weighted random derivation over it, generating strings that match a token's
+  regular expression (e.g. the `rand_regex` crate), and turning A19's `proptest`
+  strategies into generic ones driven by data instead of by `calc-lang`'s AST types.
+- **Compiler/tooling you'll learn**: grammar-based generation (random derivations,
+  and why unbounded recursive rules need depth bounds and a computed "shortest
+  derivation" to terminate); how the role model upgrades it from syntax-valid to
+  resolution-valid without any per-DSL code — `#[binding]`/`#[scope]`/`#[identifier]`
+  tell the generator which names are in scope, exactly as they tell the resolver and
+  the LSP; and why generating from `grammar.json` rather than a frontend's grammar
+  keeps the generator frontend-agnostic (spec.md §14.26 records the tradeoff).
+- **Deliverable**: the generic engine, mutation operators, oracles, and shrinking
+  extracted into a shared `dslgen-testgen` crate, with `calc-testgen` reduced to
+  per-DSL inputs (grammar, role model, signatures, weights). Run against
+  `calc-lang`'s inputs, it passes every A19 oracle on its own fixed-seed batch and
+  on A19's committed corpus; a rule-coverage report shows every grammar rule and
+  every role exercised by that batch (the stand-in for a golden test, since a
+  different generator can't reproduce A19's exact programs); and a grammar rule the
+  generator can't derive a finite program from is reported as a clear
+  generation-time error, not a hang.
+
 ### B7. The code generator itself
 
 - **Spec refs**: §4, §5 (last bullet), §11 (`dslgen build`)
-- **Prereqs**: B2–B6, B4-ts
+- **Prereqs**: B2–B6, B4-ts, B6-tests
 - **Rust you'll learn**: code-generation techniques — either string/template-based
   (simplest to start) or `syn`/`quote`-based AST-level generation for the Rust glue
   code; file-system scaffolding (`std::fs`, walking a template directory).
@@ -527,12 +593,13 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   author-supplied `ParserFrontend` module into the workspace at the same slot a
   generated frontend would occupy. Whatever the frontend, the generator also emits the
   `tree-sitter-calc/` package via B4-ts, since the tree-sitter grammar is editor
-  tooling that sits beside the frontend, not one of its choices.
+  tooling that sits beside the frontend, not one of its choices. Likewise it emits
+  `calc-testgen` via B6-tests.
 - **Deliverable**: running the generator against `calc-lang`'s own grammar +
   annotations + `bindings.toml` produces a workspace that, once `cargo build
   --release`'d, behaves identically to Part A's hand-written `calcc`/`calc-lsp`, with a
   `tree-sitter-calc/` package matching A15's and passing its corpus and conformance
-  tests — and
+  tests, and a `calc-testgen` whose generated suite passes — and
   switching `dslgen.toml`'s frontend from `lalrpop` to `custom` (pointing at A1-custom's
   hand-written module, if you did that session) regenerates a workspace that behaves
   identically too, with no changes needed anywhere downstream of parsing.
@@ -566,7 +633,9 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 - **Deliverable**: a second working generated DSL toolchain — compiler, LSP, and
   tree-sitter grammar package — plus a regression test suite that runs `dslgen build`
   against both DSLs' inputs and checks the output compiles and passes each DSL's own
-  sample-program tests, tree-sitter corpus, and conformance test.
+  sample-program tests, tree-sitter corpus, conformance test, and generated program
+  test suite (B6-tests). The second DSL's generated suite is the strongest single
+  proof of genericity here: it tests a toolchain nobody hand-wrote a test program for.
 
 ### B10. Prove the frontend boundary through the generator, not just by hand
 
@@ -672,15 +741,20 @@ each other (dependencies noted per-session).
 ### C4. Differential testing: interpreter as oracle
 
 - **Spec refs**: §8.1 (last bullet), §9.1
-- **Prereqs**: A5, A8
-- **Rust you'll learn**: property-based/fuzz-style test harnesses (e.g. `proptest`),
-  or a simpler hand-rolled "run N sample programs through all execution paths and diff
-  results" harness.
+- **Prereqs**: A5, A8, A19 (its generated corpus is the input)
+- **Rust you'll learn**: adding an oracle to A19's harness — building and running
+  each program through every enabled backend, then comparing against the
+  interpreter.
 - **Compiler/tooling you'll learn**: using a simple, obviously-correct execution path
   (the interpreter) to catch bugs in more complex ones (the codegen backends) —
-  a standard, high-leverage compiler-testing technique.
-- **Deliverable**: a test suite running each sample `.calc` program through the
-  interpreter and both backends, asserting identical results.
+  a standard, high-leverage compiler-testing technique — and defining "the same
+  result" precisely for floating point (NaN, signed zero), which A19's single-path
+  oracles never had to.
+- **Deliverable**: the differential oracle from spec.md §10.2 added to
+  `calc-testgen`, running each hand-written sample and each generated `.calc` program
+  from A19's corpus and fixed-seed batch through the interpreter and both backends
+  and asserting identical output and results, with disagreements shrunk to minimal
+  programs.
 
 ### C5. Teaching documentation series: consolidation pass
 
@@ -772,7 +846,7 @@ committing to every session: **A0 → A1 → A2 → A3 → A4 → A5 → A6 → 
 **B1 → B2 → B4 → B5 → B7**. That's parsing, AST, scopes, IR, interpreter, one codegen
 backend, the backend abstraction, one built-in kind, a CLI, then the full
 generalize-into-a-generator arc. Everything else (second backend, FFI/IPC, LSP, the
-tree-sitter grammar package (A15/B4-ts), hot reload, memory strategies, retargeting, overrides, dynamic linking, cross-compilation,
+tree-sitter grammar package (A15/B4-ts), the program test suite generator (A19/B6-tests), hot reload, memory strategies, retargeting, overrides, dynamic linking, cross-compilation,
 docs) layers on afterward in any order you like — including **A1-pest**, **A1-custom**, **A18**,
 and **C1-wasm**, which are entirely optional side branches: skip them if you're fine
 taking "the parser layer is pluggable", "memory/scope primitives are built-ins too",

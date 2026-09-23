@@ -32,6 +32,9 @@ From these inputs, DSL-Generator produces a self-contained Rust workspace contai
   the DSL's users to plug into tree-sitter-aware editors and tools, with its query
   files generated from the role annotations (§10.1). It is editor tooling only, not
   how the compiler or LSP parse the DSL.
+- **A program test generator** (e.g. `calc-testgen`) that produces suites of programs
+  written in the DSL — valid ones, deliberately broken ones, and fuzzing seeds — and
+  checks the DSL's toolchain against them (§10.2).
 - A secondary debug interpreter and a Cranelift-JIT-backed hot-reload dev mode, for
   fast edit-run-debug cycles without a full AOT build on every change (§9).
 - Generated code organized into small, idiomatic, individually-documented modules,
@@ -69,6 +72,9 @@ is the central structural idea of the whole system (§4).
   so a DSL's users get syntax highlighting, folding, indentation, and structural
   navigation in tree-sitter-aware editors and tools — including ones that never speak
   LSP — with the package's queries driven by the same role annotations.
+- **Generate a test suite of programs in the DSL** (§10.2) — derived from the grammar,
+  role annotations, and built-in signatures — so every generated toolchain can be
+  tested against far more programs than anyone writes by hand, from its first build.
 - Support built-in functions implemented however is natural for their source
   language: native Rust, C-ABI FFI, or subprocess/IPC — as equally first-class
   options, **all enabled by default in every generated compiler**, so using any one
@@ -139,6 +145,10 @@ is the central structural idea of the whole system (§4).
   queries (highlighting one language embedded in another) are also deferred.
 - Not using tree-sitter as a parser frontend (§5): the tree-sitter grammar is editor
   tooling for the DSL's users, not how `calcc` or `calc-lsp` parse.
+- Not guaranteeing the generated program test suite (§10.2) is semantically complete:
+  generic generation guarantees valid syntax and name resolution, not well-typed
+  programs or ones free of the DSL's own run-time errors. Coverage-guided fuzzing is
+  an on-demand tool, not a CI gate.
 
 ## 4. High-Level Architecture
 
@@ -190,6 +200,9 @@ crates/calc-compiler/    bin: calcc
                            archive + its declared/derived native dependencies
   src/runtime_deps.rs      run-time dependency checks, IPC bundle packing (§7)
 crates/calc-lsp/         bin: calc-lsp — LSP server (§10)
+crates/calc-testgen/     bin + lib: calc-testgen — program test suite generator
+                         and its oracles (§10.2); corpus/ holds the committed
+                         generated programs, mutants, and golden results
 tree-sitter-calc/        tree-sitter grammar package (§10.1): grammar.js, the
                          generated src/parser.c, queries/, a test corpus, and
                          tree-sitter's language bindings (the Rust one is a
@@ -198,7 +211,8 @@ Cargo.toml                workspace manifest; backend inclusion via feature flag
 ```
 
 Running `cargo build --release` on that workspace produces two native binaries,
-`calcc` (the compiler) and `calc-lsp` (the language server), for the calculator DSL.
+`calcc` (the compiler) and `calc-lsp` (the language server), for the calculator DSL
+(plus `calc-testgen`, a developer-only test tool — §10.2).
 Neither depends on `dslgen` at runtime. The `tree-sitter-calc/` package isn't a binary
 `cargo build --release` produces: it ships as sources (with its C parser already
 generated) that a user points their editor or tool at (§10.1).
@@ -225,7 +239,10 @@ depends on, analogous to how a Rust program depends on `libstd`. Only the parts
 specific to one DSL (grammar file, AST, lowering, role annotations, builtin
 declarations) are generated per project. The same split applies to the tree-sitter
 package (§10.1): the role-to-query-capture mapping is shared, generic code, while the
-package's `grammar.js`, corpus, and generated queries are per-DSL.
+package's `grammar.js`, corpus, and generated queries are per-DSL. The program test
+generator (§10.2) splits the same way: its engine and oracles are shared
+(`dslgen-testgen`), while only its inputs — grammar, role model, signatures, and any
+author tuning — are per-DSL.
 
 ## 5. Grammar Definition Format & Pluggable Parser Frontends
 
@@ -818,6 +835,76 @@ kinds**:
   tokens, the two tools classify a keyword or identifier the same way by
   construction; the conformance test extends that guarantee to the grammar itself.
 
+### 10.2 Generated Program Test Suite
+
+- Alongside the compiler, LSP, and tree-sitter package, `dslgen build` also generates
+  a **program test generator** (e.g. `crates/calc-testgen`) that produces suites of
+  programs *written in the DSL* (e.g. `.calc` files) for testing the DSL's own
+  toolchain. Hand-written sample programs only cover what their author thought of; a
+  generated suite covers the grammar's whole shape, and gives every DSL built with
+  DSL-Generator a test corpus from day one — including a DSL nobody has written a
+  single test program for yet.
+- It is **test infrastructure for the DSL's toolchain** — the corpus §8.1's
+  differential testing and §10.1's conformance test run over — not a feature of
+  `calcc` or something the DSL's end users run.
+- **Techniques**, layered cheapest-first:
+  1. **Grammar- and role-directed generation** (the primary technique): random
+     derivations of the grammar, bounded in depth and size, with per-rule weights.
+     The role model (§6.2) is what makes the derivations *meaningful* rather than
+     just syntactically valid: an `#[identifier]` use site only picks a name that a
+     `#[binding]` in an enclosing `#[scope]` has already introduced, a `#[binding]`
+     site mints a fresh name that can't collide with a `#[keyword]`, and a built-in
+     call gets the arity and argument types `bindings.toml` declares (§7). Generated
+     programs are therefore valid by construction for parsing and name resolution —
+     the same structural facts every other role-driven consumer relies on.
+  2. **Mutation for negative tests**: each mutant of a valid program breaks exactly
+     one thing and records which diagnostic it should produce — a deleted or
+     duplicated token (parse error), a use renamed to an unbound name (unresolved
+     identifier), a binding repeated in one scope (duplicate binding), a built-in
+     called with the wrong arity. This tests that bad programs get diagnostics
+     through the CLI and the LSP (§2), never panics or opaque backend failures.
+  3. **Coverage-guided fuzzing** (optional): libFuzzer targets (via `cargo-fuzz`)
+     over the parser frontend(s), the resolver, and the LSP's document handling,
+     seeded from the generated corpus, with "doesn't crash or hang" as the only
+     oracle. Fuzzing needs a nightly toolchain and sanitizer support that varies by
+     platform, so it runs on demand, not in CI; each crash it finds is minimized and
+     committed to the corpus as an ordinary regression test.
+- **Oracles** — what turns a generated program into a test when nobody wrote its
+  expected output:
+  - **Accept/reject**: every generated program passes `calcc check`; every mutant
+    fails it with the diagnostic class it was generated to produce.
+  - **Round-trip**: printing a generated program and parsing it back yields the same
+    tree it was printed from.
+  - **Differential**: the interpreter and every enabled codegen backend produce the
+    same output and result (§8.1's last bullet), with equality defined once for the
+    DSL's value types (e.g. for `f64`, every NaN compares equal to every other NaN).
+  - **Frontend agreement**: every `ParserFrontend` in the workspace, and the
+    tree-sitter grammar (§10.1's conformance test), agree on each program.
+  - **Golden results**: the interpreter's output for each committed program is stored
+    beside it, so a change that alters every execution path the same way still shows
+    up as a failure.
+- **Determinism and shrinking**: generation is seeded, and the same generator version
+  and seed produce the same programs on every platform. A failing program is shrunk
+  to a minimal failing one (by shrinking its derivation tree, as property-testing
+  libraries do) before it's reported or committed.
+- **Where it runs**: a committed corpus (programs, mutants, and golden results) plus a
+  small, fixed-seed fresh batch run under plain `cargo test`; larger or unseeded
+  batches run on demand through the generator's own CLI (§11).
+- **Generic vs. per-DSL**: the generation engine, mutation operators, oracles, and
+  shrinking are shared, generic code (working name `dslgen-testgen`, alongside
+  `dslgen-backend`/`dslgen-lsp` — §4). Its per-DSL inputs are the grammar in
+  machine-readable form, the role model, and `bindings.toml`'s signatures. The grammar
+  comes from tree-sitter's `src/grammar.json` — generated from the author's
+  `grammar.js` (§10.1) — because it exists whatever `ParserFrontend` the compiler
+  uses, including a hand-written one with no grammar file at all; §10.1's
+  same-named-node check already ties its nodes to the role model. Token rules are
+  generated from their regular expressions. An author can tune rule weights and size
+  bounds, and override generation for individual rules, in `dslgen.toml`.
+- Roles and signatures carry no deeper semantics, so generic generation can't
+  guarantee a program is well-typed beyond what they express, or that it avoids
+  run-time errors a DSL defines (e.g. an out-of-range index). Where that matters, the
+  per-rule overrides are the escape hatch (§14).
+
 ## 11. Generated Artifact & CLI Tool UX
 
 - Primary interface is a CLI, working name `dslgen` (the meta-tool):
@@ -827,9 +914,9 @@ kinds**:
     author's `grammar.js` (its conflict reports are grammar errors) and checking every
     role-tagged rule has a same-named tree-sitter node (§10.1).
   - `dslgen build [--backends=llvm,cranelift] [--tree-sitter-wasm]` — generate the
-    Rust workspace (compiler + LSP server + optional interpreter) and the tree-sitter
-    grammar package, and run `cargo build --release`, producing `calcc` and
-    `calc-lsp`. `--tree-sitter-wasm` additionally builds the package's `.wasm`
+    Rust workspace (compiler + LSP server + optional interpreter + program test
+    generator) and the tree-sitter grammar package, and run `cargo build --release`,
+    producing `calcc`, `calc-lsp`, and `calc-testgen`. `--tree-sitter-wasm` additionally builds the package's `.wasm`
     parser for editors that load grammars as WebAssembly.
   - The tree-sitter CLI (and the JavaScript runtime it needs to evaluate
     `grammar.js`) is an explicit, generation-time-only dependency of `dslgen check`/
@@ -848,6 +935,15 @@ kinds**:
 - The **generated tree-sitter package** (e.g. `tree-sitter-calc`) has no CLI of its
   own: a user registers it with their editor or tool by that tool's usual mechanism
   for third-party tree-sitter grammars (§10.1).
+- The **generated program test generator** (e.g. `calc-testgen`, §10.2) is a
+  developer tool for whoever maintains the DSL's toolchain:
+  - `calc-testgen generate [--seed=<n>] [--count=<n>] [--mutants] -o <dir>` — write a
+    batch of generated programs (and, with `--mutants`, their broken variants and
+    expected diagnostics) to a directory.
+  - `calc-testgen check [--seed=<n>] [--count=<n>]` — generate a batch in memory and
+    run every oracle against it, printing each failure shrunk to a minimal program.
+  - `calc-testgen promote <program>` — add a program (e.g. a shrunk failure or a
+    fuzzing crash) to the committed corpus with its golden result.
 - Generated crates are ordinary Cargo workspace members, inspectable/patchable by
   hand if needed (with the standard "generated, do not edit" convention plus a
   separate file for hand-written extensions, since `dslgen build` regenerates them).
@@ -856,7 +952,7 @@ kinds**:
 
 - Generated code — both DSL-Generator's own shared libraries (`dslgen-backend`,
   `dslgen-lsp`) and the per-DSL crates it produces (`calc-syntax`, `calc-ir`,
-  `calc-compiler`, `calc-lsp`, and the `tree-sitter-calc` package) — is organized into small, idiomatic Rust modules
+  `calc-compiler`, `calc-lsp`, `calc-testgen`, and the `tree-sitter-calc` package) — is organized into small, idiomatic Rust modules
   mirroring this spec's own section boundaries (lexing/parsing glue, AST, lowering,
   each codegen backend, each memory strategy, linking, IPC, interpreter, LSP), rather
   than emitted as large, undifferentiated files. Each module should be simple enough
@@ -909,6 +1005,11 @@ kinds**:
    while the author edits it, patching in changed functions live; `calcc run
    --interpret hello.calc` remains available as a codegen/link-free fallback for
    quick one-off checks.
+8. Before shipping a change to the calculator DSL's grammar or built-ins, the author
+   runs `calc-testgen check --count=10000`: thousands of generated `.calc` programs
+   and mutants go through the interpreter, both backends, and the tree-sitter grammar,
+   and any disagreement comes back shrunk to a few-line program — without the author
+   having written a single one of those programs.
 
 ## 14. Open Questions / Decisions Needed
 
@@ -1011,3 +1112,17 @@ kinds**:
     publishes generated packages (npm, crates.io, editor grammar registries) or ships
     per-editor extensions, versus leaving the package as sources the user registers
     by hand.
+25. **Semantic depth of generated programs** (§10.2): generic generation guarantees
+    valid syntax and name resolution from the role model and signatures. Whether a
+    richer type system (#8) should feed the generator directly (type-directed
+    generation, so every program is well-typed without per-rule overrides), and how a
+    DSL declares run-time errors the generator should avoid or deliberately provoke,
+    is open.
+26. **Test-program generation source** (§10.2): v1 derives programs from tree-sitter's
+    `grammar.json` because it exists for every frontend. Whether a LALRPOP or pest
+    frontend's own grammar should be preferred where available (it is the grammar the
+    compiler actually uses, so it can't drift) — with `grammar.json` kept as the
+    fallback for hand-written frontends — is open, and interacts with #22.
+27. **Fuzzing in CI** (§10.2, §3): whether a time-boxed coverage-guided fuzzing run
+    ever becomes a scheduled CI job (e.g. nightly, Linux only), versus staying an
+    on-demand tool whose findings reach CI only as committed corpus entries.

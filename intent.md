@@ -20,7 +20,8 @@ baseline LSP, and a tree-sitter grammar package for that DSL — without hand-wr
 parser, typechecker, or codegen backend themselves. The tree-sitter package is
 editor/tool tooling for the DSL's users (highlighting, folding, structural
 navigation in any tree-sitter-aware editor or tool); it is not how the compiler
-parses.
+parses. Each DSL also gets a generator of test programs written in that DSL, so its
+toolchain is tested against far more programs than anyone writes by hand.
 
 ## Why this approach
 

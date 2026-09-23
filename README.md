@@ -15,7 +15,8 @@ symbol table), a compiler binary that lowers to native code via pluggable
 codegen backends (LLVM and/or Cranelift), a language server binary with
 diagnostics, semantic highlighting, and symbol navigation out of the box, and a
 tree-sitter grammar package with highlighting/folding/indent/outline queries
-that users can plug into tree-sitter-aware editors and tools.
+that users can plug into tree-sitter-aware editors and tools, and a generator of
+test programs written in the DSL that checks the whole toolchain against them.
 
 See [intent.md](intent.md) for why this project exists and the constraints
 any design must honor, and [spec.md](spec.md) for the formal design derived

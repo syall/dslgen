@@ -186,7 +186,7 @@ read the repo live, so it only ever reflects reality if this step keeps it in sy
      next changes from `todo` to `next` — it stays a plain, unlinked row until *it*
      has a doc page.
    - Recompute the top `stat-band` count and percentage, and the relevant Part's
-     `part-count` and bar width — the denominator stays the 37-session required path,
+     `part-count` and bar width — the denominator stays the 39-session required path,
      matching the footer's existing framing of the optional branches as uncounted.
    - If this session's Part doesn't yet have its `part-card` wrapped in an
      `<a class="part-link" href="...">` pointing at that Part's own docs index, check
