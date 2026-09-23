@@ -47,7 +47,8 @@ is the central structural idea of the whole system (§4).
   codegen backend.
 - Produce genuinely native, ahead-of-time-compiled binaries via **pluggable codegen
   backends** — starting with LLVM and Cranelift, individually or together, with the
-  architecture open to adding more backends later.
+  architecture open to adding more backends later — for the host machine by default,
+  or **cross-compiled for another native target** chosen by target triple (§8.1).
 - Build the parsing layer as a **pluggable frontend** — preferring an established,
   industry-standard parsing library where one fits, while letting an author supply
   their own hand-written parser (e.g. recursive descent) when it doesn't — rather than
@@ -107,11 +108,13 @@ is the central structural idea of the whole system (§4).
   the chosen backend(s) already provide.
 - Not designing a package/module system for DSLs-of-DSLs (importing one generated DSL
   from another) in v1.
-- Not committing to cross-compilation support in v1 (host-native builds only); the
-  backend abstraction (§8) should not foreclose it later. The one planned exception
-  is a `wasm32` target (§7.1, §8.1), and only if §14 #19 resolves in favor of
-  shipping it in v1 — it's scheduled as an optional roadmap session, not a
-  commitment.
+- Not committing to a `wasm32` target in v1: cross-compilation to other *native*
+  targets is in v1 scope (§8.1), but `wasm32` (§7.1, §8.1) — which needs its own
+  linker and has no OS underneath — is scheduled as an optional roadmap session, only
+  if §14 #19 resolves in favor of shipping it in v1. Cross-compilation also isn't
+  expected to *install* foreign toolchains: the target's Rust standard library,
+  linker and C library/sysroot are the user's to provide, and `calcc` reports clearly
+  when one is missing.
 - Not guaranteeing subprocess/IPC built-ins preserve the "single self-contained
   binary, zero external runtime dependencies" property (§7) — that tradeoff is
   inherent to choosing an IPC-backed built-in and is accepted, not solved, in v1.
@@ -444,11 +447,11 @@ kinds**:
   rules, most-specific-wins vs. declaration-order) — left open (§14) — but the
   *shape* of "one interface, N target-scoped implementations, each independently
   choosing a binding kind" is the v1 design.
-- Note this deliberately broadens §3's "cross-compilation is out of v1" non-goal
-  narrowly: DSL-Generator isn't committing to *automating* every cross-compilation
-  toolchain concern in v1, but the built-in binding data model is designed for
-  multi-target retargeting from the start, since retrofitting it later would touch
-  every layer between the manifest and codegen.
+- This is the manifest half of v1's cross-compilation support (§8.1): the target
+  triple a build is for decides which implementation each built-in uses, so the
+  built-in binding data model is designed for multi-target retargeting from the
+  start, since retrofitting it later would touch every layer between the manifest and
+  codegen. DSL-Generator still doesn't automate installing foreign toolchains (§3).
 
 ### 7.2 Externally configuring where implementations live
 
@@ -548,6 +551,22 @@ kinds**:
     functions (§7.1), and a wasm runtime to execute the result. The IPC kind isn't
     available on `wasm32-unknown-unknown` (no process spawning); a WASI target may
     relax that. Whether this ships in v1 is §14 #19.
+  - **Cross-compilation to other native targets** (host ≠ target, e.g. building an
+    `aarch64-unknown-linux-gnu` executable on an x86_64 machine) follows the same
+    model industry compilers use (clang `--target`, `rustc --target`): one target
+    triple, chosen once (`calcc build --target=<triple>`, defaulting to the host), is
+    threaded through every stage that currently assumes the host — both backends'
+    code generation (Cranelift and LLVM each accept a target triple; LLVM also needs
+    that architecture's code generator compiled in, and a generic CPU model rather
+    than the build machine's own), the built-in
+    runtime archive (built for that triple, which needs the matching Rust target
+    installed), the link driver (a linker for that target, selected via the standard
+    `CC_<target>` convention, plus that target's C library/sysroot), and the
+    run-time requirements it reports (§7). Built-in implementations are selected for
+    that triple via §7.1. Executables for a foreign target can't run on the build
+    machine, so testing them needs an emulator (e.g. qemu, wine) or a native runner.
+    `wasm32` above is a special case of this, with its own linker and no OS. This
+    ships in v1 (§14 #13); `wasm32` remains optional (§14 #19).
 - The interpreter backend (§9) also consumes the same mid-level IR and implements a
   parallel (non-`Backend`-trait, since it doesn't produce an executable) execution
   path, so semantics stay single-sourced and it can serve as a correctness oracle for
@@ -792,9 +811,11 @@ kinds**:
     development.
 12. **Grammar composability**: can one grammar file import/extend another? Deferred
     per §3 but worth flagging early since it affects the file format now.
-13. **Cross-compilation**: out of scope for v1 (§3), but both backends have
-    cross-compilation stories — confirm the `Backend` trait boundary doesn't
-    foreclose this later.
+13. **Cross-compilation** — *resolved*: cross-compilation to other native targets is
+    in v1 scope (§8.1's cross-compilation bullet lists what a working target needs;
+    the roadmap schedules it as a required session after the link driver and
+    target-selection work, §7.1). Still open: which non-host targets CI exercises
+    beyond the first one, and whether `wasm32` joins them (#19).
 14. **LSP scope growth path**: what's the concrete v2 feature list beyond §10's v1
     scope (rename, workspace symbols, code actions) once the symbol model is proven?
 15. **Hot reload on LLVM** (§9.2): v1 hot reload is Cranelift-JIT-only — whether an

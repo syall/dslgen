@@ -543,7 +543,7 @@ each other (dependencies noted per-session).
 
 ### C1-wasm. A working `wasm32` target (optional, gated on §14.19)
 
-- **Spec refs**: §7.1, §8.1 (`wasm32` bullet), §3 (cross-compilation exception),
+- **Spec refs**: §7.1, §8.1 (`wasm32` bullet), §3 (`wasm32` non-goal),
   §14.13, §14.19
 - **Prereqs**: A7/A8 (LLVM backend), A12 (link driver), C1
 - **Rust you'll learn**: `inkwell`'s WebAssembly target (enabling its
@@ -664,6 +664,40 @@ each other (dependencies noted per-session).
   build of that library (e.g. swapped via C2's override, or just replaced on disk)
   without re-running `calcc build`. Static stays the default.
 
+### C8. Cross-compilation to other native targets
+
+- **Spec refs**: §3, §8.1 (cross-compilation bullet), §7.1, §14.13
+- **Prereqs**: A8 (both backends behind one trait), A12 (link driver), C1 (built-in
+  implementations selected per target). Independent of C1-wasm: whichever of the two
+  lands first introduces `calcc build --target=<triple>`, and the other reuses it.
+- **Rust you'll learn**: `rustup target add`, building a crate for a non-host
+  `--target`, configuring Cranelift's `isa::lookup` and LLVM's `TargetMachine` from a
+  triple (`target-lexicon`), enabling `inkwell`'s per-architecture features (e.g.
+  `target-aarch64` alongside today's `target-x86`), the `cc` crate's `CC_<target>`
+  conventions, running foreign-architecture test binaries under an emulator (e.g.
+  `qemu-user`) or skipping the run step cleanly when none is available.
+- **Compiler/tooling you'll learn**: what "target" really means — a triple naming
+  architecture, vendor, OS and ABI — and the four things that must all agree on it
+  for a cross build to work: generated code, the runtime library, the target's C
+  library/startup files (the sysroot), and a linker for the target's object format.
+  How industry compilers split that work (clang/rustc take a `--target` but need an
+  external sysroot and linker; GCC ships one toolchain per target; Go and Zig bundle
+  more of it), and which parts A12's link driver already handled by passing the
+  target triple around in one place. Also why "use the host's CPU" is right for a
+  native build and wrong for a cross build: `llvm_backend.rs`'s `host_machine()`
+  (A7) assumes the host three times over (`initialize_native`, the default triple,
+  and the host CPU name/features), and A7 limited LLVM to x86 (`target-x86`) with a
+  deferral A8 never picked up — this session retires both.
+- **Deliverable**: `calcc build --backend=<name> --target=<triple>` producing a
+  working executable for at least one non-host native target (e.g.
+  `aarch64-unknown-linux-gnu` from an x86_64 Linux host), through both backends, for
+  a program exercising all three built-in kinds — verified by running it under an
+  emulator in CI; the LLVM backend working natively on non-x86 hosts too (not
+  x86-only); `--target` omitted still means the host, with no behavior change; and a
+  clear error naming
+  what's missing (Rust target not installed, no linker for the target) rather than
+  a raw linker failure.
+
 ---
 
 ## Suggested minimum path
@@ -673,10 +707,10 @@ committing to every session: **A0 → A1 → A2 → A3 → A4 → A5 → A6 → 
 **B1 → B2 → B4 → B5 → B7**. That's parsing, AST, scopes, IR, interpreter, one codegen
 backend, the backend abstraction, one built-in kind, a CLI, then the full
 generalize-into-a-generator arc. Everything else (second backend, FFI/IPC, LSP, hot
-reload, memory strategies, retargeting, overrides, dynamic linking, docs) layers on
-afterward in any order you like — including **A1-pest**, **A1-custom**, **A17**,
-**B10**, and **C1-wasm**, which are entirely optional side branches: skip them if you're
-fine taking "the parser layer is pluggable", "memory/scope primitives are built-ins
-too", and "the retargeting model reaches wasm" on faith, do them if you want to see
-pest, a hand-written recursive-descent parser, the scope/symbol-table refactor, and a
-real `wasm32` build actually happen.
+reload, memory strategies, retargeting, overrides, dynamic linking, cross-compilation,
+docs) layers on afterward in any order you like — including **A1-pest**, **A1-custom**, **A17**,
+and **C1-wasm**, which are entirely optional side branches: skip them if you're fine
+taking "the parser layer is pluggable", "memory/scope primitives are built-ins too",
+and "the retargeting model reaches wasm" on faith, do them if you want to see pest, a
+hand-written recursive-descent parser, the scope/symbol-table refactor, and a real
+`wasm32` build actually happen.
