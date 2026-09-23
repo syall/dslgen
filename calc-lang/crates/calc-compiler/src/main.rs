@@ -90,7 +90,7 @@ fn main() -> ExitCode {
                 keep_object,
             },
         ),
-        // `interpret` is always true here (clap requires it); it's a field so A15's
+        // `interpret` is always true here (clap requires it); it's a field so A16's
         // `--hot-reload` can become the other choice of one required mode.
         Command::Run { interpret: _, path } => run_interpret(&path),
         Command::Check { path } => match parse_and_resolve(&path) {

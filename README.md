@@ -5,14 +5,17 @@
 
 DSL-Generator lets an author supply a grammar, semantic actions, role
 annotations, and built-in bindings, and get back a working, ahead-of-time-
-compiled compiler and a baseline LSP for that DSL — without hand-writing a
-parser, typechecker, or codegen backend themselves.
+compiled compiler, a baseline LSP, and a tree-sitter grammar package for that
+DSL — without hand-writing a parser, typechecker, or codegen backend
+themselves.
 
 From those inputs, DSL-Generator produces a self-contained Rust workspace
 containing a generated parser, a semantic-analysis library (AST, IR lowering,
 symbol table), a compiler binary that lowers to native code via pluggable
-codegen backends (LLVM and/or Cranelift), and a language server binary with
-diagnostics, semantic highlighting, and symbol navigation out of the box.
+codegen backends (LLVM and/or Cranelift), a language server binary with
+diagnostics, semantic highlighting, and symbol navigation out of the box, and a
+tree-sitter grammar package with highlighting/folding/indent/outline queries
+that users can plug into tree-sitter-aware editors and tools.
 
 See [intent.md](intent.md) for why this project exists and the constraints
 any design must honor, and [spec.md](spec.md) for the formal design derived

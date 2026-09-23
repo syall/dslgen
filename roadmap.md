@@ -20,7 +20,7 @@ logic at the same time.
 Instead, **Part A builds one concrete DSL toolchain entirely by hand** — a small
 calculator language (`calc-lang`, the same example spec.md §13 uses), with every piece
 hardcoded rather than generated: its own parser, AST, IR, interpreter, two codegen
-backends, built-ins, and an LSP. This is where nearly all the compiler-construction and
+backends, built-ins, an LSP, and a tree-sitter grammar package. This is where nearly all the compiler-construction and
 Rust learning happens, and it matches the spec's own §2 implementation philosophy
 ("prefer small, focused, incremental additions... even where a bigger refactor might
 look more elegant in isolation").
@@ -55,7 +55,8 @@ and fills in anything left uncovered.
 ## Part A — Hand-build one real DSL toolchain (`calc-lang`)
 
 No code generation anywhere in Part A. Every file is written by hand for this one DSL.
-Goal: a working `calcc` (compiler) and `calc-lsp` (language server) for a small
+Goal: a working `calcc` (compiler), `calc-lsp` (language server), and
+`tree-sitter-calc` (tree-sitter grammar package for editors and tools) for a small
 calculator language with variables, `if`/`else`, and a couple of built-in functions.
 
 ### A0. Workspace setup & parser-library decision
@@ -300,7 +301,35 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   token classification for keywords/identifiers/literals, and go-to-definition/hover,
   verified against a real editor (VS Code with a generic LSP-client config is easiest).
 
-### A15. Cranelift-JIT hot reload
+### A15. Hand-built tree-sitter grammar package (`tree-sitter-calc`)
+
+- **Spec refs**: §10.1, §6.2, §5 (tree-sitter is not a frontend)
+- **Prereqs**: A3 (role model), A14 (the LSP it complements)
+- **Rust you'll learn**: compiling vendored C sources from `build.rs` with the `cc`
+  crate, the `tree-sitter` crate (`Parser`, `Tree`, `Node`, `TreeCursor`, `Query`/
+  `QueryCursor`), exposing a C grammar to Rust through a `LanguageFn`, and
+  table-driven corpus tests run under plain `cargo test`.
+- **Compiler/tooling you'll learn**: concrete syntax trees vs. ASTs; how tree-sitter's
+  error recovery (`ERROR`/`MISSING` nodes) keeps highlighting working on half-typed
+  code; the query language and the standard capture names editors key off
+  (`@keyword`, `@variable`, `@local.scope`/`@local.definition`/`@local.reference`,
+  `@fold`, `@indent`); what tree-sitter gives an editor that the LSP doesn't, and vice
+  versa; and why two grammars for one language need a conformance test to stay honest
+  — tree-sitter here is a developer tool for `calc-lang`'s users, never how `calcc`
+  parses.
+- **Deliverable**: a `tree-sitter-calc/` package in tree-sitter's standard layout,
+  written by hand: `grammar.js`; the `tree-sitter generate` output (`src/parser.c`
+  etc.) committed so building needs only a C compiler; `highlights.scm`, `locals.scm`,
+  `folds.scm`, `indents.scm`, and `tags.scm` hand-written to follow §10.1's role →
+  capture table, so B3-ts has a reference to generate against; a Rust binding crate
+  in the workspace that runs the `test/corpus/` tests under `cargo test`; and a
+  conformance test that runs a shared corpus of sample programs through both the
+  LALRPOP `ParserFrontend` and the tree-sitter grammar, asserting they agree on
+  accept/reject and on the spans of role-tagged nodes. The package is loaded by hand
+  in one real tree-sitter-aware editor (which one is still open, spec.md §14.23) and
+  the highlighting/folding checked there.
+
+### A16. Cranelift-JIT hot reload
 
 - **Spec refs**: §9.2, §14.15
 - **Prereqs**: A6, A13
@@ -313,7 +342,7 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   changed function on save, with a working fallback-to-restart path for a layout-
   changing edit.
 
-### A16. Memory management, strategy 1: manual
+### A17. Memory management, strategy 1: manual
 
 - **Spec refs**: §7 (memory primitives as built-ins), §8.2 (manual)
 - **Prereqs**: A4, A6/A7, A9
@@ -331,15 +360,15 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   remains available as the zero-runtime-footprint option for programs that need
   neither.
 
-### A17. Scope/symbol-table primitives as built-ins
+### A18. Scope/symbol-table primitives as built-ins
 
 - **Spec refs**: §6.3, §7.3
 - **Prereqs**: A3, A9
-- **Rust you'll learn**: nothing new beyond A9/A16's pattern, applied to a different
+- **Rust you'll learn**: nothing new beyond A9/A17's pattern, applied to a different
   call site — `scope_enter`, `scope_exit`, `symbol_declare(name, kind, type)`, and
   `symbol_lookup(name)` as plain native-Rust functions bound the same way `add`/`mul`
   were.
-- **Compiler/tooling you'll learn**: A16 showed memory-management primitives are just
+- **Compiler/tooling you'll learn**: A17 showed memory-management primitives are just
   built-ins, not a special codegen path; this session shows the same is true of A3's
   scope/symbol-table operations — but with a difference worth learning concretely.
   Memory-management built-ins are only ever called *inside the compiled DSL program*,
@@ -352,13 +381,13 @@ calculator language with variables, `if`/`else`, and a couple of built-in functi
   an IPC-backed override of these four as a deliberate, editor-responsiveness-costing
   tradeoff rather than the free choice §7's general framing otherwise implies.
 - **Deliverable**: `scope_enter`/`scope_exit`/`symbol_declare`/`symbol_lookup`
-  declared as native-Rust built-ins alongside A9's `add`/`mul` and A16's `alloc`/
+  declared as native-Rust built-ins alongside A9's `add`/`mul` and A17's `alloc`/
   `free`, with A3's resolve pass now calling them through that interface instead of
   direct data-structure manipulation; A3's existing tests still pass unchanged,
   proving the refactor is behavior-preserving.
 
-At the end of Part A you have a complete, working, hand-built compiler + LSP for one
-DSL — everything spec.md's architecture calls for at Level 2, built without Level 1.
+At the end of Part A you have a complete, working, hand-built compiler + LSP +
+tree-sitter grammar package for one DSL — everything spec.md's architecture calls for at Level 2, built without Level 1.
 
 ---
 
@@ -375,8 +404,9 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 - **Rust you'll learn**: nothing new — this is a design/reading session.
 - **Compiler/tooling you'll learn**: how to identify a library boundary inside code
   that wasn't written with one in mind; the actual line spec.md draws between shared
-  infrastructure (IR, `Backend` impls, interpreter, LSP scaffolding, IPC shim) and
-  per-DSL generated code (grammar, AST, lowering, role annotations, builtin decls).
+  infrastructure (IR, `Backend` impls, interpreter, LSP scaffolding, IPC shim, the
+  role → tree-sitter-capture mapping) and per-DSL generated code (grammar, AST,
+  lowering, role annotations, builtin decls, `grammar.js` and its generated queries).
 - **Deliverable**: a short written map of every file from Part A into "generic
   (→ `dslgen-backend`/`dslgen-lsp`)" or "per-DSL (→ generated per project)".
 
@@ -428,6 +458,28 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   `RoleModel` supplied directly (no grammar file to parse), proving the two paths
   converge on one shared type.
 
+### B4-ts. Generate the tree-sitter grammar package
+
+- **Spec refs**: §10.1, §6.2, §11 (`dslgen check`/`build` and the tree-sitter CLI)
+- **Prereqs**: B4, A15
+- **Rust you'll learn**: same extraction pattern as B2/B3, applied to a mapping
+  rather than a runtime; emitting non-Rust files (`.scm` queries, `tree-sitter.json`)
+  from Rust; driving an external generation-time tool (`tree-sitter generate`) with
+  `std::process::Command` and turning its failures into generation-time diagnostics;
+  reading tree-sitter's `node-types.json` with `serde_json`.
+- **Compiler/tooling you'll learn**: the same move B3 makes for the LSP, applied to
+  editor tooling that has no server — A15's hand-written queries become *output* of
+  §10.1's role → capture table, driven by B4's `RoleModel`, so every DSL gets
+  tree-sitter highlighting/folding/indentation/outline for free; and the
+  generation-time check that each role-tagged rule has a same-named tree-sitter node,
+  which is what keeps an author-written `grammar.js` answerable to the role model.
+- **Deliverable**: the generic role → capture mapping extracted into shared code
+  (alongside `dslgen-lsp`'s role-driven pieces); given `calc-lang`'s `RoleModel` and
+  A15's `grammar.js`, it regenerates `queries/*.scm` identical in effect to A15's
+  hand-written ones (a golden test), runs `tree-sitter generate`, and generates the
+  frontend ↔ tree-sitter conformance test; a deliberately misnamed tree-sitter node is
+  reported as a clear error, not silently dropped from the queries.
+
 ### B5. Generic, annotation-driven lowering
 
 - **Spec refs**: §6.3, §8.1
@@ -445,22 +497,22 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 ### B6. `bindings.toml` parsing and validation
 
 - **Spec refs**: §7 (manifest), §7.1 excluded for now (that's C1)
-- **Prereqs**: B1, A9–A11, A16, A17
+- **Prereqs**: B1, A9–A11, A17, A18
 - **Rust you'll learn**: `serde` + `toml` crate for structured config parsing,
   designing a validation pass with good error messages.
 - **Compiler/tooling you'll learn**: replacing A9–A11's hardcoded built-in lists — and
-  A16/A17's, which follow the exact same "declare it, don't hardcode it" pattern —
+  A17/A18's, which follow the exact same "declare it, don't hardcode it" pattern —
   with a real manifest format; symbol/signature validation for native+FFI, and
   executable/protocol validation for IPC, surfaced at generation time per §4 step 3.
 - **Deliverable**: a `bindings.toml` parser/validator; feeding it `calc-lang`'s
   built-ins from Part A — the author-declared ones (A9–A11) and the memory/scope
-  primitives (A16/A17) alike — reproduces the same generation output as the hardcoded
+  primitives (A17/A18) alike — reproduces the same generation output as the hardcoded
   version.
 
 ### B7. The code generator itself
 
 - **Spec refs**: §4, §5 (last bullet), §11 (`dslgen build`)
-- **Prereqs**: B2–B6
+- **Prereqs**: B2–B6, B4-ts
 - **Rust you'll learn**: code-generation techniques — either string/template-based
   (simplest to start) or `syn`/`quote`-based AST-level generation for the Rust glue
   code; file-system scaffolding (`std::fs`, walking a template directory).
@@ -473,10 +525,14 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   `pest`, generate the grammar-file glue and translate its role annotations into a
   `RoleModel`; for `custom`, generate nothing for parsing at all — just copy the
   author-supplied `ParserFrontend` module into the workspace at the same slot a
-  generated frontend would occupy.
+  generated frontend would occupy. Whatever the frontend, the generator also emits the
+  `tree-sitter-calc/` package via B4-ts, since the tree-sitter grammar is editor
+  tooling that sits beside the frontend, not one of its choices.
 - **Deliverable**: running the generator against `calc-lang`'s own grammar +
   annotations + `bindings.toml` produces a workspace that, once `cargo build
-  --release`'d, behaves identically to Part A's hand-written `calcc`/`calc-lsp` — and
+  --release`'d, behaves identically to Part A's hand-written `calcc`/`calc-lsp`, with a
+  `tree-sitter-calc/` package matching A15's and passing its corpus and conformance
+  tests — and
   switching `dslgen.toml`'s frontend from `lalrpop` to `custom` (pointing at A1-custom's
   hand-written module, if you did that session) regenerates a workspace that behaves
   identically too, with no changes needed anywhere downstream of parsing.
@@ -487,10 +543,14 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
 - **Prereqs**: B7
 - **Rust you'll learn**: same CLI-crate skills as A13, applied to the meta-tool.
 - **Compiler/tooling you'll learn**: the three meta-tool verbs from §4 step-by-step —
-  `check` runs validation only (§4 steps 1–3) without generating anything, `build` runs
-  validation then generation then `cargo build --release`.
-- **Deliverable**: `dslgen new calc-lang`, `dslgen check`, `dslgen build
-  --backends=llvm,cranelift` all working against a scaffolded project directory.
+  `check` runs validation only (§4 steps 1–3, plus `tree-sitter generate` on the
+  author's `grammar.js`) without generating anything, `build` runs validation then
+  generation then `cargo build --release`; and reporting a missing tree-sitter CLI as
+  an explicit generation-time dependency error (§11).
+- **Deliverable**: `dslgen new calc-lang` (scaffolding a `grammar.js` stub alongside
+  the other inputs), `dslgen check`, `dslgen build --backends=llvm,cranelift`, and
+  `dslgen build --tree-sitter-wasm` all working against a scaffolded project
+  directory.
 
 ### B9. Prove genericity: a second DSL
 
@@ -503,9 +563,10 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   validation language) with a different shape of control flow/bindings is the actual
   proof that B4–B7 generalized correctly rather than accidentally staying
   `calc-lang`-specific.
-- **Deliverable**: a second working generated DSL toolchain, plus a regression test
-  suite that runs `dslgen build` against both DSLs' inputs and checks the output
-  compiles and passes each DSL's own sample-program tests.
+- **Deliverable**: a second working generated DSL toolchain — compiler, LSP, and
+  tree-sitter grammar package — plus a regression test suite that runs `dslgen build`
+  against both DSLs' inputs and checks the output compiles and passes each DSL's own
+  sample-program tests, tree-sitter corpus, and conformance test.
 
 ### B10. Prove the frontend boundary through the generator, not just by hand
 
@@ -519,7 +580,9 @@ by inputs (grammar + role annotations + `bindings.toml`) instead of hardcoded fa
   frontend key; this session is the point where those two facts get tied together —
   confirming `dslgen build` produces a working `calcc`/`calc-lsp` for *both* DSLs from
   B9 under at least two different frontend choices each (e.g. `calc-lang` via LALRPOP
-  and via the hand-written frontend), with no code changes outside `dslgen.toml`.
+  and via the hand-written frontend), with no code changes outside `dslgen.toml` — and
+  with each DSL's tree-sitter conformance test passing unchanged against every
+  frontend, since `grammar.js` doesn't depend on which one the compiler uses.
 - **Deliverable**: a regression matrix (DSL × frontend) in the B9 test suite, proving
   "bring your own parser" is a real, generator-level capability and not just something
   that happened to work in Part A's hand-written code.
@@ -584,7 +647,7 @@ each other (dependencies noted per-session).
 
 - **Spec refs**: §7 (memory primitives as built-ins), §8.2 (ownership/borrow-checked
   or GC — pick one), §14.9, §14.10
-- **Prereqs**: A16, B5 (needs generic lowering to add strategy-specific passes
+- **Prereqs**: A17, B5 (needs generic lowering to add strategy-specific passes
   cleanly), B6 (bindings.toml is now data-driven, not A9's hardcoded list)
 - **Rust you'll learn**: depends on choice — either implementing a small borrow-checker
   pass, or integrating/writing a simple mark-sweep collector and emitting GC-aware
@@ -593,11 +656,11 @@ each other (dependencies noted per-session).
   codegen backend, not an independent concern" (§8.2) — this strategy needs its own
   lowering support in *both* the Cranelift and LLVM backends from Part A, which is the
   concrete lesson in why that matrix is designed together rather than bolted on. As in
-  A16, the strategy's own primitives (`drop` for ownership/borrow-checked; `gc_alloc`/
+  A17, the strategy's own primitives (`drop` for ownership/borrow-checked; `gc_alloc`/
   `gc_collect`/`gc_safepoint` for GC) are declared as built-ins through B6's
   data-driven manifest, not hardcoded into either backend — the borrow-check or GC
   lowering pass's only job is to insert the right built-in-call IR nodes at the right
-  points, exactly like A16's automatic `free` insertion.
+  points, exactly like A17's automatic `free` insertion.
 - **Deliverable**: the second strategy selectable via `dslgen.toml`, with its required
   built-in names declared in `bindings.toml` (native Rust by default, per §8.2),
   working through both backends, with a test DSL program that would behave differently
@@ -708,9 +771,9 @@ If you want the shortest path to "I understand how the whole thing fits together
 committing to every session: **A0 → A1 → A2 → A3 → A4 → A5 → A6 → A8 → A9 → A13**, then
 **B1 → B2 → B4 → B5 → B7**. That's parsing, AST, scopes, IR, interpreter, one codegen
 backend, the backend abstraction, one built-in kind, a CLI, then the full
-generalize-into-a-generator arc. Everything else (second backend, FFI/IPC, LSP, hot
-reload, memory strategies, retargeting, overrides, dynamic linking, cross-compilation,
-docs) layers on afterward in any order you like — including **A1-pest**, **A1-custom**, **A17**,
+generalize-into-a-generator arc. Everything else (second backend, FFI/IPC, LSP, the
+tree-sitter grammar package (A15/B4-ts), hot reload, memory strategies, retargeting, overrides, dynamic linking, cross-compilation,
+docs) layers on afterward in any order you like — including **A1-pest**, **A1-custom**, **A18**,
 and **C1-wasm**, which are entirely optional side branches: skip them if you're fine
 taking "the parser layer is pluggable", "memory/scope primitives are built-ins too",
 and "the retargeting model reaches wasm" on faith, do them if you want to see pest, a

@@ -33,7 +33,7 @@ the teaching-doc series (see "Where the teaching docs live" above — one page p
 completed session) and `git log` (one "Add <ID>: ..." commit per completed session) to
 find the first session in roadmap order that has neither. Propose that one as the
 default and ask the user to confirm — don't just
-start on it, since sessions like A1-pest/A1-custom/A17/C1-wasm are explicitly optional
+start on it, since sessions like A1-pest/A1-custom/A18/C1-wasm are explicitly optional
 side branches the user may want to skip.
 
 ## 1. Read the session's entry and its prerequisites
@@ -181,12 +181,12 @@ read the repo live, so it only ever reflects reality if this step keeps it in sy
      the repo is ever renamed or forked.
    - Advance the `next` pill to whichever session immediately follows it in
      roadmap.md's order, skipping the optional side branches (`A1-pest`, `A1-custom`,
-     `A17`, `C1-wasm`) the same way the footer's counts already do; the session that had `next`
+     `A18`, `C1-wasm`) the same way the footer's counts already do; the session that had `next`
      before becomes `done` (and gets linked per the bullet above), and whatever is now
      next changes from `todo` to `next` — it stays a plain, unlinked row until *it*
      has a doc page.
    - Recompute the top `stat-band` count and percentage, and the relevant Part's
-     `part-count` and bar width — the denominator stays the 35-session required path,
+     `part-count` and bar width — the denominator stays the 37-session required path,
      matching the footer's existing framing of the optional branches as uncounted.
    - If this session's Part doesn't yet have its `part-card` wrapped in an
      `<a class="part-link" href="...">` pointing at that Part's own docs index, check

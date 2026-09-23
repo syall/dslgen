@@ -28,14 +28,19 @@ From these inputs, DSL-Generator produces a self-contained Rust workspace contai
 - **A language server binary** (e.g. `calc-lsp`), generated from the same grammar and
   role annotations, providing diagnostics, semantic highlighting, and symbol
   navigation out of the box (§10).
+- **A tree-sitter grammar package** (e.g. `tree-sitter-calc`) — a developer tool for
+  the DSL's users to plug into tree-sitter-aware editors and tools, with its query
+  files generated from the role annotations (§10.1). It is editor tooling only, not
+  how the compiler or LSP parse the DSL.
 - A secondary debug interpreter and a Cranelift-JIT-backed hot-reload dev mode, for
   fast edit-run-debug cycles without a full AOT build on every change (§9).
 - Generated code organized into small, idiomatic, individually-documented modules,
   forming a teaching-oriented documentation series for the project as a whole (§12).
 
 Building the generated workspace with `cargo build --release` produces the DSL's own
-compiler and language server binaries. Running the compiler on a program written in
-the DSL (e.g. `calcc build hello.calc -o hello`) produces a genuinely native,
+compiler and language server binaries, alongside the tree-sitter grammar package's
+sources. Running the compiler on a program written in the DSL (e.g.
+`calcc build hello.calc -o hello`) produces a genuinely native,
 ahead-of-time-compiled executable for that program. This two-level generation — a
 meta-tool that builds a DSL's tooling, which then operates on programs in that DSL —
 is the central structural idea of the whole system (§4).
@@ -60,6 +65,10 @@ is the central structural idea of the whole system (§4).
 - **Generate a working Language Server (LSP) implementation from the grammar and its
   role annotations as a first-class output**, giving every DSL built with the tool
   baseline diagnostics, semantic highlighting, and symbol navigation for free.
+- **Generate a tree-sitter grammar package** alongside the compiler and LSP (§10.1),
+  so a DSL's users get syntax highlighting, folding, indentation, and structural
+  navigation in tree-sitter-aware editors and tools — including ones that never speak
+  LSP — with the package's queries driven by the same role annotations.
 - Support built-in functions implemented however is natural for their source
   language: native Rust, C-ABI FFI, or subprocess/IPC — as equally first-class
   options, **all enabled by default in every generated compiler**, so using any one
@@ -123,6 +132,13 @@ is the central structural idea of the whole system (§4).
   LSP's v1 scope is diagnostics, semantic tokens, and basic go-to-definition/hover
   (§10); richer features are a natural follow-on once the underlying symbol model
   proves out.
+- Not publishing or distributing the generated tree-sitter grammar package (§10.1)
+  in v1 — no npm/crates.io publishing, no upstreaming to editor grammar registries,
+  and no per-editor extension packaging (e.g. a Zed or VS Code extension). The
+  package is generated as sources a user points their editor at. Language-injection
+  queries (highlighting one language embedded in another) are also deferred.
+- Not using tree-sitter as a parser frontend (§5): the tree-sitter grammar is editor
+  tooling for the DSL's users, not how `calcc` or `calc-lsp` parse.
 
 ## 4. High-Level Architecture
 
@@ -174,12 +190,18 @@ crates/calc-compiler/    bin: calcc
                            archive + its declared/derived native dependencies
   src/runtime_deps.rs      run-time dependency checks, IPC bundle packing (§7)
 crates/calc-lsp/         bin: calc-lsp — LSP server (§10)
+tree-sitter-calc/        tree-sitter grammar package (§10.1): grammar.js, the
+                         generated src/parser.c, queries/, a test corpus, and
+                         tree-sitter's language bindings (the Rust one is a
+                         workspace member so cargo test can run the corpus)
 Cargo.toml                workspace manifest; backend inclusion via feature flags
 ```
 
 Running `cargo build --release` on that workspace produces two native binaries,
 `calcc` (the compiler) and `calc-lsp` (the language server), for the calculator DSL.
-Neither depends on `dslgen` at runtime.
+Neither depends on `dslgen` at runtime. The `tree-sitter-calc/` package isn't a binary
+`cargo build --release` produces: it ships as sources (with its C parser already
+generated) that a user points their editor or tool at (§10.1).
 
 **Level 2 — using the generated tooling**
 
@@ -192,14 +214,18 @@ The resulting executable has no `calcc`/`dslgen` dependency, though it may still
 external interpreters on `PATH` for any IPC built-ins it uses, and a writable per-user
 cache directory to unpack their embedded bundles into (§7). Separately, an
 editor speaks the LSP protocol to `calc-lsp` for live diagnostics, semantic
-highlighting, and go-to-definition/hover while editing `.calc` files.
+highlighting, and go-to-definition/hover while editing `.calc` files, and a
+tree-sitter-aware editor or tool loads `tree-sitter-calc` for syntax highlighting,
+folding, indentation, and structural navigation — with or without `calc-lsp` running.
 
 The mid-level IR (§8), codegen backend trait implementations, the debug interpreter,
 and the LSP scaffolding are not regenerated from scratch per DSL — they are shared,
 versioned libraries (`dslgen-backend`, `dslgen-lsp`) that every generated workspace
 depends on, analogous to how a Rust program depends on `libstd`. Only the parts
 specific to one DSL (grammar file, AST, lowering, role annotations, builtin
-declarations) are generated per project.
+declarations) are generated per project. The same split applies to the tree-sitter
+package (§10.1): the role-to-query-capture mapping is shared, generic code, while the
+package's `grammar.js`, corpus, and generated queries are per-DSL.
 
 ## 5. Grammar Definition Format & Pluggable Parser Frontends
 
@@ -237,11 +263,14 @@ declarations) are generated per project.
     supplied implementation into the generated workspace exactly where a generated
     LALRPOP/pest frontend would otherwise go, so downstream stages (role-driven
     lowering, codegen, the LSP) can't tell the difference.
-  - **tree-sitter** and **ANTLR4** remain candidate future built-in frontends (§14.1)
-    — the closest thing to a true cross-ecosystem "industry standard" and the most
-    broadly recognized parser-generator name, respectively — but are not required to
-    prove the trait boundary, since the custom-implementation path already covers "a
-    frontend DSL-Generator doesn't ship a built-in adapter for."
+  - **ANTLR4** remains a candidate future built-in frontend (§14.1) — the most
+    broadly recognized parser-generator name — but is not required to prove the trait
+    boundary, since the custom-implementation path already covers "a frontend
+    DSL-Generator doesn't ship a built-in adapter for."
+- tree-sitter is deliberately **not** a `ParserFrontend`. DSL-Generator does generate
+  a tree-sitter grammar for every DSL (§10.1), but as a developer tool for the DSL's
+  users' editors and tools, kept consistent with whichever frontend the compiler uses
+  by a conformance test — never as a way the compiler or LSP parses.
 - Frontend choice is a **per-project, generation-time decision** (declared in
   `dslgen.toml` alongside backend/memory-strategy selection — §8), not something a
   compiled DSL program's user picks at `calcc build` time: a DSL's grammar and its
@@ -311,6 +340,9 @@ vocabulary generic infrastructure understands).
   question (§14), since a closed set is far simpler to guarantee generic
   infrastructure (IR lowering, LSP) can rely on, but limits DSLs whose control-flow
   or binding forms don't map cleanly onto it.
+- The same role model also drives the generated tree-sitter package's query files
+  (§10.1) — one more generic consumer, alongside lowering and the LSP, that never
+  needs per-DSL code.
 
 ### 6.3 How the two halves combine
 
@@ -728,15 +760,81 @@ kinds**:
   LSP in sync with grammar/semantics changes is automatic — there is exactly one
   place (the grammar + role annotations) that defines both.
 
+### 10.1 Generated tree-sitter Grammar Package
+
+- Alongside the compiler and LSP, `dslgen build` also generates a **tree-sitter
+  grammar package** (e.g. `tree-sitter-calc/`) — a developer tool for the DSL's users
+  to plug into tree-sitter-aware editors (Neovim, Helix, Zed, Emacs, ...) and tools
+  (structural diff, structural search, code-navigation indexers). It follows
+  tree-sitter's own standard package layout, so those consumers load it the way they
+  load any other tree-sitter grammar — consistent with §5's "reuse industry-standard
+  infrastructure" principle.
+- **Not a frontend.** The package is never how `calcc` or `calc-lsp` parse (§5); the
+  compiler keeps its chosen `ParserFrontend`, and the tree-sitter grammar exists
+  purely for the DSL's users' tooling.
+- **Complements, doesn't replace, the LSP (§10).** The LSP gives resolution-aware
+  features (diagnostics, go-to-definition, hover) through a running server;
+  tree-sitter gives fast, error-tolerant syntactic features with no server —
+  highlighting, folding, indentation, structural selection, symbol outlines — and
+  works in tools that never speak LSP. Editors commonly run both, layering the LSP's
+  semantic tokens over tree-sitter's highlighting.
+- Package contents:
+  - `grammar.js` — the tree-sitter grammar, written by the DSL author (see
+    "Consistency" below). `dslgen new` scaffolds a stub.
+  - `src/parser.c` and tree-sitter's other generated sources, produced by
+    `tree-sitter generate` and **committed with the package**, so building or testing
+    it needs only a C compiler (already required for C-ABI built-ins, §7) — never
+    Node.js or the tree-sitter CLI.
+  - `queries/` — `highlights.scm`, `locals.scm`, `folds.scm`, `indents.scm`, and
+    `tags.scm`, **generated from the role model** (§6.2), not hand-written.
+  - `test/corpus/` — tree-sitter corpus tests, run from Rust through the package's
+    Rust binding under plain `cargo test`.
+  - `tree-sitter.json` and tree-sitter's standard language bindings (at least Rust
+    and C).
+- **Role → query mapping.** Each role-tagged grammar rule must have a node of the
+  same name in `grammar.js` (checked at generation time against tree-sitter's
+  `node-types.json`); the queries are then derived mechanically:
+
+  | Role (§6.2) | Generated captures |
+  |---|---|
+  | `#[keyword(...)]` | `@keyword` (refined to `@keyword.conditional`/`@keyword.repeat`/`@keyword.return` where the keyword belongs to a `#[control_flow]` rule) in `highlights.scm` |
+  | `#[identifier]` | `@variable` in `highlights.scm`; `@local.reference` in `locals.scm` |
+  | `#[binding]` | `@local.definition` in `locals.scm`; a definition in `tags.scm` |
+  | `#[scope_*]` / `#[scope]` | `@local.scope` in `locals.scm`; `@fold` in `folds.scm`; `@indent` in `indents.scm` |
+  | `#[control_flow(...)]` | `@fold` in `folds.scm`; `@indent` on its body captures in `indents.scm` |
+  | literals | `@number` / `@string` in `highlights.scm` |
+
+  The mapping itself is generic, shared code; only its output is per-DSL.
+- **Consistency with the compiler's grammar.** The author writes `grammar.js` rather
+  than DSL-Generator translating the frontend's grammar into it, because no single
+  translation covers every frontend (pest's ordered choice and hand-written
+  frontends have no mechanical tree-sitter equivalent). Drift is instead caught by a
+  generated **conformance test**: a shared corpus of sample programs runs through both
+  the compiler's `ParserFrontend` and the tree-sitter grammar, which must agree on
+  accept/reject and on the source spans of every role-tagged node. Automatic
+  translation for frontends where it is feasible (e.g. LALRPOP) is an open question
+  (§14).
+- Because the queries come from the same role annotations as the LSP's semantic
+  tokens, the two tools classify a keyword or identifier the same way by
+  construction; the conformance test extends that guarantee to the grammar itself.
+
 ## 11. Generated Artifact & CLI Tool UX
 
 - Primary interface is a CLI, working name `dslgen` (the meta-tool):
   - `dslgen new <name>` — scaffold a new grammar/semantics/bindings project.
   - `dslgen check` — validate grammar + actions + role annotations + bindings
-    without generating code.
-  - `dslgen build [--backends=llvm,cranelift]` — generate the Rust workspace
-    (compiler + LSP server + optional interpreter) and run
-    `cargo build --release`, producing `calcc` and `calc-lsp`.
+    without generating code; this includes running `tree-sitter generate` on the
+    author's `grammar.js` (its conflict reports are grammar errors) and checking every
+    role-tagged rule has a same-named tree-sitter node (§10.1).
+  - `dslgen build [--backends=llvm,cranelift] [--tree-sitter-wasm]` — generate the
+    Rust workspace (compiler + LSP server + optional interpreter) and the tree-sitter
+    grammar package, and run `cargo build --release`, producing `calcc` and
+    `calc-lsp`. `--tree-sitter-wasm` additionally builds the package's `.wasm`
+    parser for editors that load grammars as WebAssembly.
+  - The tree-sitter CLI (and the JavaScript runtime it needs to evaluate
+    `grammar.js`) is an explicit, generation-time-only dependency of `dslgen check`/
+    `dslgen build`: a missing one is reported as such, not worked around. Neither the
+    generated workspace's `cargo build` nor its tests need it (§10.1).
 - The **generated compiler** (e.g. `calcc`) has its own CLI surface:
   - `calcc build [--backend=<name>] program.calc -o program` — AOT-compile a DSL
     program via the selected (or sole enabled) codegen backend.
@@ -747,6 +845,9 @@ kinds**:
 - The **generated language server** (e.g. `calc-lsp`) is a standard stdio/TCP LSP
   server binary an editor is configured to launch for files of the DSL's extension —
   no separate CLI surface beyond standard LSP server startup flags.
+- The **generated tree-sitter package** (e.g. `tree-sitter-calc`) has no CLI of its
+  own: a user registers it with their editor or tool by that tool's usual mechanism
+  for third-party tree-sitter grammars (§10.1).
 - Generated crates are ordinary Cargo workspace members, inspectable/patchable by
   hand if needed (with the standard "generated, do not edit" convention plus a
   separate file for hand-written extensions, since `dslgen build` regenerates them).
@@ -755,7 +856,7 @@ kinds**:
 
 - Generated code — both DSL-Generator's own shared libraries (`dslgen-backend`,
   `dslgen-lsp`) and the per-DSL crates it produces (`calc-syntax`, `calc-ir`,
-  `calc-compiler`, `calc-lsp`) — is organized into small, idiomatic Rust modules
+  `calc-compiler`, `calc-lsp`, and the `tree-sitter-calc` package) — is organized into small, idiomatic Rust modules
   mirroring this spec's own section boundaries (lexing/parsing glue, AST, lowering,
   each codegen backend, each memory strategy, linking, IPC, interpreter, LSP), rather
   than emitted as large, undifferentiated files. Each module should be simple enough
@@ -770,7 +871,8 @@ kinds**:
 - Collectively, these pages form **a documentation series for DSL-Generator itself**:
   read in order, they walk a reader through building a real compiler end to end
   (grammar → parsing → semantic analysis → IR → codegen → linking → a working
-  binary), with the LSP and hot-reload paths covered as their own pages once the core
+  binary), with the LSP, tree-sitter package, and hot-reload paths covered as their
+  own pages once the core
   pipeline is established. This is a first-class deliverable of the project, not
   incidental code comments — the generated system is meant to double as a teaching
   resource for how compilers work, grounded in real, runnable code rather than
@@ -788,7 +890,9 @@ kinds**:
    `add`/`mul` (native Rust) and `print` (a Python subprocess built-in) in
    `bindings.toml`.
 3. `dslgen build --backends=llvm,cranelift` validates everything and generates the
-   workspace, producing `calcc` (with both backends compiled in) and `calc-lsp`.
+   workspace, producing `calcc` (with both backends compiled in) and `calc-lsp`, plus
+   the `tree-sitter-calc` package from the author's `grammar.js`, with its queries
+   generated from the step-1 role annotations.
 4. `calcc build --backend=cranelift hello.calc -o hello` compiles a program into a
    native executable for fast local iteration; `calcc build --backend=llvm hello.calc
    -o hello-release` produces a more heavily optimized build for shipping. Because
@@ -798,7 +902,9 @@ kinds**:
 6. While editing `hello.calc`, the author's editor launches `calc-lsp`, which
    reports a live diagnostic for an unresolved identifier and highlights `if`/`else`
    as keywords distinctly from variable names, using only the role annotations
-   declared in step 1 — no hand-written editor-tooling code.
+   declared in step 1 — no hand-written editor-tooling code. A user whose editor loads
+   `tree-sitter-calc` instead (or as well) gets the same keyword/identifier
+   highlighting, plus folding of `if`/`else` bodies, from the generated queries.
 7. During development, `calcc run --hot-reload hello.calc` keeps the program running
    while the author edits it, patching in changed functions live; `calcc run
    --interpret hello.calc` remains available as a codegen/link-free fallback for
@@ -806,19 +912,18 @@ kinds**:
 
 ## 14. Open Questions / Decisions Needed
 
-1. **Default built-in frontend, and whether to add tree-sitter/ANTLR4** (§5): parsing
-   is now a pluggable `ParserFrontend` boundary with LALRPOP, pest, and custom
-   hand-written implementations all supported in v1, so the "single library" framing
-   this question used to have is resolved — what remains open is which built-in
-   frontend `dslgen new` defaults a freshly-scaffolded project to, and whether
-   tree-sitter (notably relevant to §10's LSP, given how many existing LSP
-   implementations already lean on it for incremental reparsing) or ANTLR4 are worth
-   adding as further built-in adapters later.
+1. **Default built-in frontend, and whether to add ANTLR4** (§5): parsing is now a
+   pluggable `ParserFrontend` boundary with LALRPOP, pest, and custom hand-written
+   implementations all supported in v1, so the "single library" framing this question
+   used to have is resolved — what remains open is which built-in frontend `dslgen new`
+   defaults a freshly-scaffolded project to, and whether ANTLR4 is worth adding as a
+   further built-in adapter later. tree-sitter is settled as *not* a frontend: it is a
+   generated developer tool for the DSL's users (§10.1).
 2. **Action language, per-frontend**: plain inline Rust is available wherever the
    frontend is Rust-native (LALRPOP, and any custom hand-written implementation, which
    is just Rust to begin with) vs. a custom restricted action language (DSLA) for
-   frontends that keep grammar and actions separate (pest, and prospectively
-   tree-sitter/ANTLR4), for analyzability.
+   frontends that keep grammar and actions separate (pest, and prospectively ANTLR4),
+   for analyzability.
 3. **Role annotation vocabulary extensibility** (§6.2): fixed closed set for v1 vs.
    an extensible/plugin mechanism for DSLs whose constructs don't map cleanly onto
    the initial vocabulary (identifier/keyword/control-flow/scope/binding).
@@ -891,3 +996,18 @@ kinds**:
     outright refuse without an explicit override) when one of these four is bound to
     subprocess/IPC, given the `calc-lsp` latency concern — versus leaving it a purely
     informational caution in the docs.
+22. **Generating `grammar.js` automatically** (§10.1): v1 has the author write the
+    tree-sitter grammar, with a conformance test catching drift from the compiler's
+    frontend. Whether `dslgen` should instead translate the frontend's grammar into
+    `grammar.js` where that's mechanically feasible (LALRPOP's context-free grammar
+    plus precedence declarations maps fairly directly; pest's ordered choice and
+    hand-written frontends don't) — and whether a translated grammar could stay
+    readable enough to hand-tune — is open.
+23. **Which editors/tools the tree-sitter package is verified against** (§10.1): which
+    editor (e.g. Helix or Neovim) the hand-built package is first checked in by hand,
+    and whether CI ever loads the package into a real editor rather than only running
+    its corpus and conformance tests from Rust.
+24. **Distributing the tree-sitter package** (§10.1, §3): whether a later version
+    publishes generated packages (npm, crates.io, editor grammar registries) or ships
+    per-editor extensions, versus leaving the package as sources the user registers
+    by hand.

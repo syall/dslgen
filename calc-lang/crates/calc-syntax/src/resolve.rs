@@ -3,7 +3,7 @@
 //! lexical scopes at each `Expr::Block`, and reports unresolved identifiers and
 //! duplicate bindings within a single scope. This is deliberately hand-rolled logic
 //! for now, not routed through a built-in mechanism — §7.3's `scope_enter`/
-//! `scope_exit`/`symbol_declare`/`symbol_lookup` built-in refactor is session A17's
+//! `scope_exit`/`symbol_declare`/`symbol_lookup` built-in refactor is session A18's
 //! job, once there's a generic role-driven lowering pass (Part B) to plug into.
 
 use std::collections::HashMap;

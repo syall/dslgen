@@ -15,9 +15,12 @@ even when a purpose-built DSL would be the right tool for a problem.
 ## Goal
 
 DSL-Generator lets an author supply a grammar, semantic actions, role annotations,
-and built-in bindings, and get back a working, ahead-of-time-compiled compiler and a
-baseline LSP for that DSL — without hand-writing a parser, typechecker, or codegen
-backend themselves.
+and built-in bindings, and get back a working, ahead-of-time-compiled compiler, a
+baseline LSP, and a tree-sitter grammar package for that DSL — without hand-writing a
+parser, typechecker, or codegen backend themselves. The tree-sitter package is
+editor/tool tooling for the DSL's users (highlighting, folding, structural
+navigation in any tree-sitter-aware editor or tool); it is not how the compiler
+parses.
 
 ## Why this approach
 
